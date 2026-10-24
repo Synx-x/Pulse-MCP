@@ -22,11 +22,19 @@ endpoint. It records visible DOM controls, roles, labels, selected state, and
 viewport-relative bounds; it stores only a screenshot digest, never screenshot
 bytes. Browser clicks require a current mapped screen and explicit effect
 authorization for controls classified as writes. A changed screen records a
-verified transition. Desktop observation and action adapters are still pending.
+verified transition.
 Once a route has been learned, `pulse_browser_replay` executes it in one MCP
 call, verifies each expected DOM state, and stops on divergence. It captures a
 screenshot digest for the final state only; intermediate route checks use the
 structured DOM map.
+
+The Linux desktop adapter reads `computer-use-linux` accessibility snapshots
+and screenshots. It places accessible elements on the same normalized grid;
+when an actionable element has missing or zero-position bounds, optional local
+Tesseract OCR matches its accessible label to screenshot coordinates. Pulse
+stores the screenshot digest and anchor metadata, not screenshot bytes or form
+values. Desktop actions use the existing CUL input path. Browser and desktop
+routes share the same verified-transition planner.
 
 ## Install for development
 
@@ -71,6 +79,9 @@ tools; agents do not need a special Pulse command.
 | `pulse_browser_observe` | Observe and map visible controls from a local Chromium tab |
 | `pulse_browser_click` | Click a mapped control after a stale-screen check |
 | `pulse_browser_replay` | Execute a verified route in one call with state checks |
+| `pulse_desktop_observe` | Map a Linux desktop from accessibility and screenshot data |
+| `pulse_desktop_click` | Click a mapped desktop control after a stale-screen check |
+| `pulse_desktop_replay` | Execute a verified desktop route with state checks |
 
 Anchor bounds are normalized: `x`, `y`, `width`, and `height` each use the
 viewport as a 0–1 scale. An anchor is placed in the grid cell containing its
@@ -90,6 +101,10 @@ The server reads port 9222 by default; tools can pass another local debugging
 port, or set `PULSE_CDP_PORT` in the MCP server environment. Connect only a
 browser profile intended for agent control.
 
+Desktop tools require `computer-use-linux mcp` on `PATH`; set
+`PULSE_COMPUTER_USE_BIN` to choose a specific binary. Tesseract is optional and
+is used only to place controls whose accessibility bounds are missing.
+
 ## Development checks
 
 ```sh
@@ -101,10 +116,11 @@ python3 -m compileall -q src tests
 
 Pulse aims for at least 50% lower median end-to-end time than a model-in-the-loop
 computer-use baseline, with verified success preserved. This repository has no
-live harness-level benchmark result yet. An initial local Chromium driver test
-is recorded in [docs/benchmark.md](docs/benchmark.md): a three-step fixture
-route replay was 69.0% faster at p50 than three individual guarded clicks. This
-does not include model thinking or agent transport. The gate is repeated, paired
-runs on representative browser and desktop tasks, with task success, false
-success, side effects, wall time, model calls, retries, and fallback recorded
-for every run.
+live harness-level benchmark result yet. Paired local MCP driver tests in
+[docs/benchmark.md](docs/benchmark.md) measured a three-step browser route at
+69.0% lower p50 latency and a two-step VNC-backed desktop route at 68.9% lower
+p50 latency than individual guarded clicks. Neither includes model thinking or
+hosted agent transport. The gate is repeated, paired runs through Claude/Codex
+on representative browser and desktop tasks, with task success, false success,
+side effects, wall time, model calls, retries, and fallback recorded for every
+run.

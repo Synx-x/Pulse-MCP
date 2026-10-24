@@ -24,7 +24,27 @@ browser-driver microbenchmark, not total task time or Claude/Codex latency. It
 does not include model thinking, tool transport through a hosted agent, desktop
 accessibility, or visual-only tasks. Replay still validates every state; it
 avoids intermediate screenshot encoding because the DOM map is the state
-evidence for this browser case. Next benchmark gates are the same paired test
-through the actual harness and representative production workflows, followed
-by a desktop adapter benchmark. Keep the 50% project target open until those
-workloads pass without a success-rate regression.
+evidence for this browser case.
+
+## Isolated desktop route
+
+The Linux desktop adapter was tested in a temporary 960×720 headless Sway
+desktop managed by the existing Agent Desktops service. A local GTK fixture had
+three screens and two write controls. The map combined the CUL accessibility
+tree with Sway window geometry; a Zenity probe with zero AT-SPI positions used
+Tesseract to locate each button label separately. The two-step route was learned
+with real clicks, reset outside the timed sections, then replayed. Seven runs
+per path all reached the expected final screen.
+
+| Path | p50 | Samples |
+| --- | ---: | --- |
+| Two guarded desktop click calls | 3,364.9 ms | 3,291.6, 3,261.1, 3,311.0, 3,384.1, 3,416.4, 3,732.0, 3,364.9 |
+| One verified desktop replay | 1,047.7 ms | 1,022.6, 1,042.0, 1,019.3, 1,047.8, 1,088.5, 1,108.9, 1,047.7 |
+
+Median local driver latency fell 68.9%: `(1 - 1,047.7 / 3,364.9) × 100`.
+Replay reused the accessibility map and window geometry for this task, so it
+needed no screenshots; maps that rely on vision anchors still capture a
+screenshot to verify those anchors. This is an in-process MCP driver test, not
+an end-to-end harness benchmark. It excludes model time, Herdr transport, and
+other desktop applications. Next gates are paired runs through Claude/Codex on
+representative browser and desktop workflows, with success preserved.

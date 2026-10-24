@@ -67,6 +67,22 @@ _TOOLS: dict[str, tuple[str, dict[str, Any], str]] = {
          "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
            "start": {"type": "string"}, "target": {"type": "string"},
            "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_replay"),
+    "pulse_desktop_observe": (
+        "Capture the active Linux desktop through computer-use-linux, map accessibility controls to a normalized screen grid, and use OCR for anchors when accessibility bounds are missing.",
+        {"type":"object", "properties":{"app_id":{"type":"string"},
+          "application":{"type":"string"}}}, "desktop_observe"),
+    "pulse_desktop_click": (
+        "Click an anchored desktop control only when the live desktop still matches the expected mapped screen. Write effects require explicit authorization.",
+        {"type":"object", "required":["expected_screen","anchor_id"],
+         "properties":{"app_id":{"type":"string"}, "application":{"type":"string"},
+          "expected_screen":{"type":"string"}, "anchor_id":{"type":"string"},
+          "authorized_effects":{"type":"array", "items":{"type":"string", "enum":["write","irreversible"]}}}}, "desktop_click"),
+    "pulse_desktop_replay": (
+        "Execute a verified desktop route in one call. Each step checks the expected mapped screen and stops on divergence. Write effects require explicit authorization.",
+        {"type":"object", "required":["start","target"],
+         "properties":{"app_id":{"type":"string"}, "application":{"type":"string"},
+          "start":{"type":"string"}, "target":{"type":"string"},
+          "authorized_effects":{"type":"array", "items":{"type":"string", "enum":["write","irreversible"]}}}}, "desktop_replay"),
 }
 
 

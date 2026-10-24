@@ -4,10 +4,11 @@ from __future__ import annotations
 import os
 from typing import Any, Mapping
 
-from .contracts import safe_id
+from .contracts import ScreenState, safe_id
 from .screen_map import ScreenMap
 from .store import Store
 from .drivers.browser import BrowserDriver
+from .drivers.computer_use import ComputerUseDriver
 
 
 class PulseService:
@@ -205,5 +206,123 @@ class PulseService:
                     self.record_screen(raw)
             return {"completed": True, "target_screen": plan["target"],
                     "steps_completed": len(completed), "steps": completed}
+        finally:
+            driver.close()
+
+    def desktop_observe(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        app_id = safe_id(str(args.get("app_id", "desktop")))
+        application = str(args.get("application", "")).strip() or None
+        driver = ComputerUseDriver()
+        try:
+            observation = driver.observe(app_id, application=application)
+        finally:
+            driver.close()
+        recorded = self.record_screen(observation)
+        return {"screen_id":recorded["screen_id"], "title":observation["title"],
+                "viewport":observation["viewport"], "anchor_count":recorded["anchor_count"],
+                "grid":recorded["grid"], "anchors":observation["anchors"],
+                "screenshot_sha256":observation["screenshot_sha256"]}
+
+    def desktop_click(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        app_id = safe_id(str(args.get("app_id", "desktop")))
+        expected = safe_id(str(args.get("expected_screen", "")))
+        anchor_id = safe_id(str(args.get("anchor_id", "")))
+        application = str(args.get("application", "")).strip() or None
+        authorized = args.get("authorized_effects", [])
+        if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
+            raise ValueError("authorized_effects may contain only write or irreversible")
+        screen_map = self.store.load_map(app_id)
+        if screen_map is None or expected not in screen_map.screens:
+            raise KeyError("expected desktop screen is not in the stored map")
+        source = screen_map.screens[expected]
+        anchor = next((a for a in source.anchors if a.id == anchor_id), None)
+        if anchor is None or not anchor.actionable:
+            raise ValueError("anchor is not actionable on the expected desktop screen")
+        if anchor.effect != "read" and anchor.effect not in authorized:
+            raise PermissionError(f"clicking this {anchor.effect} control requires explicit authorization")
+        driver = ComputerUseDriver()
+        try:
+            needs_screenshot = any(item.source == "vision" for item in source.anchors)
+            current = ScreenState.create(driver.observe(app_id, screenshot=needs_screenshot,
+                                                        application=application, map_hint=source))
+            if current.id != expected:
+                raise ValueError(f"stale desktop map: expected {expected}, observed {current.id}; observe and replan")
+            x = (anchor.bounds.x + anchor.bounds.width / 2) * source.viewport["width"]
+            y = (anchor.bounds.y + anchor.bounds.height / 2) * source.viewport["height"]
+            click_result = driver.click(x, y)
+            after_raw = driver.observe(app_id, application=application)
+        finally:
+            driver.close()
+        saved = self.record_screen(after_raw)
+        target = saved["screen_id"]
+        changed = target != expected
+        edge = None
+        if changed:
+            edge = self.record_transition({"app_id":app_id, "source":expected,
+                "anchor_id":anchor_id, "target":target, "verified":True})["transition"]
+        return {"clicked":bool(click_result.get("ok")), "from_screen":expected,
+                "to_screen":target, "state_changed":changed, "transition":edge,
+                "message":click_result.get("message", "")}
+
+    def desktop_replay(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        app_id = safe_id(str(args.get("app_id", "desktop")))
+        start = safe_id(str(args.get("start", "")))
+        target = str(args.get("target", "")).strip()
+        application = str(args.get("application", "")).strip() or None
+        authorized = args.get("authorized_effects", [])
+        if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
+            raise ValueError("authorized_effects may contain only write or irreversible")
+        screen_map = self.store.load_map(app_id)
+        if screen_map is None:
+            raise KeyError(f"map not found for app: {app_id}")
+        plan = screen_map.route(start, target)
+        if plan is None:
+            raise ValueError("no route of verified desktop transitions exists for this target")
+        for edge in plan["steps"]:
+            anchor = next((a for a in screen_map.screens[edge["source"]].anchors
+                           if a.id == edge["anchor_id"]), None)
+            if anchor is None:
+                raise ValueError("mapped desktop route anchor disappeared")
+            if anchor.effect != "read" and anchor.effect not in authorized:
+                raise PermissionError(f"route includes {anchor.effect} action; explicit authorization required")
+        driver = ComputerUseDriver()
+        completed = []
+        try:
+            start_screen = screen_map.screens[start]
+            start_needs_screenshot = any(item.source == "vision" for item in start_screen.anchors)
+            raw = driver.observe(app_id, screenshot=start_needs_screenshot,
+                                 application=application, map_hint=start_screen)
+            current = ScreenState.create(raw)
+            if current.id != start:
+                return {"completed":False, "start_expected":start, "start_observed":current.id,
+                        "steps_completed":0, "reason":"stale start screen; observe and replan"}
+            for index, edge in enumerate(plan["steps"]):
+                source = screen_map.screens[edge["source"]]
+                anchor = next(a for a in source.anchors if a.id == edge["anchor_id"])
+                x = (anchor.bounds.x + anchor.bounds.width / 2) * source.viewport["width"]
+                y = (anchor.bounds.y + anchor.bounds.height / 2) * source.viewport["height"]
+                click_result = driver.click(x, y)
+                if not click_result.get("ok"):
+                    return {"completed":False, "steps_completed":len(completed),
+                            "steps":completed, "reason":click_result.get("message", "desktop click failed")}
+                target_screen = screen_map.screens[edge["target"]]
+                needs_screenshot = any(item.source == "vision" for item in target_screen.anchors)
+                raw = driver.observe(app_id, screenshot=needs_screenshot, application=application,
+                                     map_hint=target_screen)
+                observed = ScreenState.create(raw)
+                if observed.id != edge["target"]:
+                    raw = driver.observe(app_id, screenshot=True, application=application)
+                    observed = ScreenState.create(raw)
+                    self.record_screen(raw)
+                    return {"completed":False, "steps_completed":len(completed),
+                            "steps":completed, "expected_screen":edge["target"],
+                            "observed_screen":observed.id,
+                            "reason":"desktop state diverged; route stopped for replanning"}
+                completed.append({"from":edge["source"], "anchor_id":edge["anchor_id"],
+                                  "to":observed.id, "verified":True})
+                if needs_screenshot:
+                    self.record_screen(raw)
+            return {"completed":True, "target_screen":plan["target"],
+                    "steps_completed":len(completed), "steps":completed}
         finally:
             driver.close()

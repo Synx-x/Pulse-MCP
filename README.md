@@ -77,6 +77,21 @@ The six-click workflow alone speeds up 278.2% through Claude Code and 276.2%
 through Codex. Both harnesses hit that target on sequential work. Neither
 reaches it on random or single-step requests.
 
+### The same runs through --ultrafast, inside agent desktops
+
+Each harness ran in its own Herdr pane, on its own agent desktop, with its own
+Chromium profile, CDP port and Pulse state per trial. The host focus never moved.
+
+| Workflow | Harness | Baseline p50 | Replay p50 | Speed increase | Runs |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Six clicks | claude --ultrafast | 49.97 s | 17.38 s | 187.5% | 4/4 correct |
+| Six clicks | Codex | 85.03 s | 23.35 s | 264.2% | 4/4 correct |
+| Two categories | claude --ultrafast | 19.73 s | 14.57 s | 35.3% | 4/4 correct |
+| Two categories | Codex | 36.45 s | 26.15 s | 39.4% | 4/4 correct |
+
+The `--ultrafast` wrapper reported `deepseek/deepseek-v4.1-flash-ultrafast` in
+every trial.
+
 ```mermaid
 xychart-beta
   title "p50 wall time, nine live workflows"

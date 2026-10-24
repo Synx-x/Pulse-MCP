@@ -142,6 +142,37 @@ because a replay step still waits for its screen.
 The scroll route now passes 3/3 where it passed 2/3 before the settle wait. The
 divergence it used to report came from reading the page too early.
 
+## Two harnesses launched as --ultrafast, inside agent desktops
+
+Date: 2026-10-24. Two workflows, 2 paired trials per path, ran through both
+harnesses. Each harness ran in its own Herdr workspace pane, on its own agent
+desktop from the Agent Desktops daemon, with its own Chromium profile, its own
+CDP port and its own Pulse state directory per trial. The panes were full-size,
+and the host focus stayed on the user's own workspace throughout.
+
+The `--ultrafast` wrapper runs Claude Code,
+`user_scripts/harnesses/ultrafast_launch.py`. The wrapper supplies the
+OpenGateway key, the base URL and the model as environment. The wrapper reported
+`deepseek/deepseek-v4.1-flash-ultrafast` in every Claude trial and, through
+`codex exec`, in every Codex trial. The wrapper's trials each ended at the
+expected end state, read from the live page.
+
+| Workflow | Harness | Calls base → replay | Baseline p50 | Replay p50 | Speed increase | Success |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| Six clicks, sequential | claude --ultrafast | 14.5 → 3 | 49.97 s | 17.38 s | 187.5% | 4/4 |
+| Six clicks, sequential | Codex | 13.5 → 2 | 85.03 s | 23.35 s | 264.2% | 4/4 |
+| Two book categories | claude --ultrafast | 5 → 3 | 19.73 s | 14.57 s | 35.3% | 4/4 |
+| Two book categories | Codex | 4 → 2 | 36.45 s | 26.15 s | 39.4% | 4/4 |
+
+The wrapper run moves the sequential workflow from 51.52 s and 48.41 s to
+17.98 s and 16.78 s. That is below the 278.2% the same workflow reached when the
+bench launched Claude by binary path, and the gap is the tool count. Replay used
+3 calls here against 2 in that set, so one trial paid the schema load.
+
+The random workflow reaches 35.3% through the wrapper and 39.4% through Codex,
+against 23.3% and 75.4% in the earlier nine-workflow set. Both random figures
+stay far below the 200% target.
+
 ## Two harnesses on the same six workflows
 
 Date: 2026-10-24. Six workflows on public sites, 2 paired trials per path, ran

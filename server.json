@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Synx-x/pulse",
+  "description": "A shared screen map and verified-workflow store for computer-use agents. Records observations from any driver on a normalized grid, connects screens with verified transitions, and returns the shortest verified route.",
+  "title": "Pulse",
+  "repository": {
+    "url": "https://github.com/Synx-x/pulse",
+    "source": "github"
+  },
+  "version": "0.1.0"
+}

@@ -74,6 +74,10 @@ choose another directory.
 
 ## Connect as an MCP server
 
+Pulse speaks MCP over stdio. `pulse-mcp` reads JSON-RPC on stdin and writes it
+on stdout, so each client launches its own child process. Pulse opens no port
+and runs nothing between sessions.
+
 For Claude Code, install the package and run:
 
 ```sh

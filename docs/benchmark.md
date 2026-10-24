@@ -155,9 +155,13 @@ Wall time is the CLI process wall clock, which includes process launch on both
 paths. Success is read from the live page after the run, never from the agent's
 own report.
 
-The sequential workflow ran separately with 3 trials per path. Six clicks on the
-add/remove page through Claude Code: baseline p50 57.4 s with 13 tool calls,
-replay p50 16.0 s with 3, a 72.1% reduction, 3/3 success on both paths.
+The sequential workflow ran separately with 3 trials per path, on both harnesses.
+Six clicks on the add/remove page:
+
+| Harness | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction | Success |
+| --- | --- | ---: | ---: | ---: | --- |
+| Claude Code | 13 → 3 | 57.4 s | 16.0 s | 72.1% | 3/3 both |
+| Codex | 14 → 2 | 84.2 s | 20.9 s | 75.1% | 3/3 both |
 
 ### Claude Code
 
@@ -192,11 +196,12 @@ baseline and 28.2 s replay, a 9.3% reduction. Repeated identical calls fell from
 ### What the paired runs do not show
 
 The 200% target is unmet on every workflow here. The best measured case is the
-six-click sequential workflow at 72.1% through Claude Code and 72.8% in process.
-The overall p50 across the six Claude workflows was 18.2 s baseline and 18.6 s
-replay, a 2% regression, and three of six workflows were slower on replay. The
-tool counts show why: on a single-step workflow a route saves one call, and the
-settle wait on each replay step costs about what the saved observation cost.
+six-click sequential workflow at 72.1% through Claude Code, 75.1% through Codex,
+and 72.8% in process. The overall p50 across the six Claude workflows was 18.2 s
+baseline and 18.6 s replay, a 2% regression, and three of six workflows were
+slower on replay. The tool counts show why: on a single-step workflow a route
+saves one call, and the settle wait on each replay step costs about what the saved
+observation cost.
 
 Reaching 200% would need replay to skip the per-step settle wait. That wait is
 what makes an async step record correctly.

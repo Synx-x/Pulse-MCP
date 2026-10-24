@@ -1,11 +1,13 @@
 """Application operations used by the MCP transport."""
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping
 
 from .contracts import safe_id
 from .screen_map import ScreenMap
 from .store import Store
+from .drivers.browser import BrowserDriver
 
 
 class PulseService:
@@ -90,3 +92,118 @@ class PulseService:
         if routine is None:
             raise KeyError(f"routine not found: {routine_id}")
         return routine
+
+    def browser_observe(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        app_id = safe_id(str(args.get("app_id", "browser")))
+        port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        driver = BrowserDriver(port)
+        try:
+            observation = driver.observe(app_id)
+        finally:
+            driver.close()
+        recorded = self.record_screen(observation)
+        return {"screen_id": recorded["screen_id"], "url": observation["url"],
+                "title": observation["title"], "viewport": observation["viewport"],
+                "anchor_count": recorded["anchor_count"], "grid": recorded["grid"],
+                "anchors": observation["anchors"], "screenshot_sha256": observation["screenshot_sha256"]}
+
+    def browser_click(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        app_id = safe_id(str(args.get("app_id", "browser")))
+        expected = safe_id(str(args.get("expected_screen", "")))
+        anchor_id = safe_id(str(args.get("anchor_id", "")))
+        port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        authorized = args.get("authorized_effects", [])
+        if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
+            raise ValueError("authorized_effects may contain only write or irreversible")
+        screen_map = self.store.load_map(app_id)
+        if screen_map is None or expected not in screen_map.screens:
+            raise KeyError("expected screen is not in the stored map")
+        before = screen_map.screens[expected]
+        anchor = next((a for a in before.anchors if a.id == anchor_id), None)
+        if anchor is None or not anchor.actionable:
+            raise ValueError("anchor is not an actionable control on the expected screen")
+        if anchor.effect != "read" and anchor.effect not in authorized:
+            raise PermissionError(f"clicking this {anchor.effect} control requires explicit authorization")
+        driver = BrowserDriver(port)
+        try:
+            current_raw = driver.observe(app_id)
+            from .contracts import ScreenState
+            current = ScreenState.create(current_raw)
+            if current.id != expected:
+                raise ValueError(f"stale map: expected screen {expected}, observed {current.id}; observe and replan")
+            center_x = (anchor.bounds.x + anchor.bounds.width / 2) * before.viewport["width"]
+            center_y = (anchor.bounds.y + anchor.bounds.height / 2) * before.viewport["height"]
+            driver.click(center_x, center_y)
+            after_raw = driver.observe(app_id)
+        finally:
+            driver.close()
+        saved = self.record_screen(after_raw)
+        after_id = saved["screen_id"]
+        changed = after_id != expected
+        edge_result = None
+        if changed:
+            edge_result = self.record_transition({"app_id": app_id, "source": expected,
+                "anchor_id": anchor_id, "target": after_id, "verified": True})["transition"]
+        return {"clicked": True, "from_screen": expected, "to_screen": after_id,
+                "state_changed": changed, "transition": edge_result,
+                "observed_title": after_raw["title"], "observed_url": after_raw["url"]}
+
+    def browser_replay(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Replay a learned route in one call; stop immediately on divergence."""
+        app_id = safe_id(str(args.get("app_id", "browser")))
+        start = safe_id(str(args.get("start", "")))
+        target = str(args.get("target", "")).strip()
+        port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        authorized = args.get("authorized_effects", [])
+        if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
+            raise ValueError("authorized_effects may contain only write or irreversible")
+        screen_map = self.store.load_map(app_id)
+        if screen_map is None:
+            raise KeyError(f"map not found for app: {app_id}")
+        plan = screen_map.route(start, target)
+        if plan is None:
+            raise ValueError("no route of verified transitions exists for this target")
+        for edge in plan["steps"]:
+            source = screen_map.screens[edge["source"]]
+            anchor = next((a for a in source.anchors if a.id == edge["anchor_id"]), None)
+            if anchor is None:
+                raise ValueError("mapped route anchor disappeared")
+            if anchor.effect != "read" and anchor.effect not in authorized:
+                raise PermissionError(f"route includes {anchor.effect} action; explicit authorization required")
+        from .contracts import ScreenState
+        driver = BrowserDriver(port)
+        completed = []
+        try:
+            raw = driver.observe(app_id, screenshot_digest=False)
+            current = ScreenState.create(raw)
+            if current.id != start:
+                return {"completed": False, "start_expected": start, "start_observed": current.id,
+                        "steps_completed": 0, "reason": "stale start screen; observe and replan"}
+            for index, edge in enumerate(plan["steps"]):
+                current_map = self.store.load_map(app_id)
+                source = current_map.screens.get(edge["source"]) if current_map else None
+                anchor = next((a for a in source.anchors if a.id == edge["anchor_id"]), None) if source else None
+                if anchor is None:
+                    return {"completed": False, "steps_completed": len(completed),
+                            "steps": completed, "reason": "mapped route anchor disappeared"}
+                x = (anchor.bounds.x + anchor.bounds.width / 2) * source.viewport["width"]
+                y = (anchor.bounds.y + anchor.bounds.height / 2) * source.viewport["height"]
+                driver.click(x, y)
+                is_last = index == len(plan["steps"]) - 1
+                raw = driver.observe(app_id, screenshot_digest=is_last)
+                observed = ScreenState.create(raw)
+                if observed.id != edge["target"]:
+                    raw["screenshot_sha256"] = driver.observe(app_id, screenshot_digest=True)["screenshot_sha256"]
+                    self.record_screen(raw)
+                    return {"completed": False, "steps_completed": len(completed),
+                            "steps": completed, "expected_screen": edge["target"],
+                            "observed_screen": observed.id,
+                            "reason": "screen diverged; route stopped for replanning"}
+                completed.append({"from": edge["source"], "anchor_id": edge["anchor_id"],
+                                  "to": observed.id, "verified": True})
+                if is_last:
+                    self.record_screen(raw)
+            return {"completed": True, "target_screen": plan["target"],
+                    "steps_completed": len(completed), "steps": completed}
+        finally:
+            driver.close()

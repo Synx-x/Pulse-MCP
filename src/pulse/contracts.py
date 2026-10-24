@@ -123,7 +123,9 @@ class ScreenState:
         anchors = tuple(Anchor.create(item) for item in raw.get("anchors", ()))
         if len({item.id for item in anchors}) != len(anchors):
             raise ValueError("anchor ids must be unique within a screen")
-        landmarks = sorted((a.role.lower(), a.label.casefold()) for a in anchors)
+        landmarks = sorted((a.role.lower(), a.label.casefold(), a.selected,
+                            round(a.bounds.x, 2), round(a.bounds.y, 2),
+                            round(a.bounds.width, 2), round(a.bounds.height, 2)) for a in anchors)
         identity = json.dumps([app_id, url, title, landmarks], ensure_ascii=False, separators=(",", ":"))
         state_id = str(raw.get("id") or "s-" + hashlib.sha256(identity.encode()).hexdigest()[:20])
         safe_id(state_id)

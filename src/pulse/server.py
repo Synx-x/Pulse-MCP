@@ -51,6 +51,22 @@ _TOOLS: dict[str, tuple[str, dict[str, Any], str]] = {
         "Read a saved routine candidate by id.",
         {"type": "object", "required": ["routine_id"],
          "properties": {"routine_id": {"type": "string"}}}, "get_routine"),
+    "pulse_browser_observe": (
+        "Observe the active local Chromium page, map visible DOM controls into the spatial grid and store the screen.",
+        {"type": "object", "properties": {"app_id": {"type": "string"},
+          "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}, "browser_observe"),
+    "pulse_browser_click": (
+        "Click a mapped browser control only if the current screen still matches the expected map state. Write and irreversible controls require explicit authorization.",
+        {"type": "object", "required": ["expected_screen", "anchor_id"],
+         "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+           "expected_screen": {"type": "string"}, "anchor_id": {"type": "string"},
+           "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_click"),
+    "pulse_browser_replay": (
+        "Execute a previously verified route in one browser call. Each step checks its expected screen and stops on divergence. Write and irreversible effects require explicit authorization.",
+        {"type": "object", "required": ["start", "target"],
+         "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+           "start": {"type": "string"}, "target": {"type": "string"},
+           "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_replay"),
 }
 
 
@@ -96,7 +112,7 @@ class McpServer:
                         result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
                         if value is None:
                             result["isError"] = True
-                    except (ValueError, KeyError, TypeError) as exc:
+                    except (ValueError, KeyError, TypeError, PermissionError) as exc:
                         result = self._tool_error(str(exc))
                     except Exception as exc:  # keep the transport alive; details stay on stderr
                         print(f"Pulse tool {name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)

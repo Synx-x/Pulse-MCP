@@ -34,6 +34,22 @@ class McpServerTests(unittest.TestCase):
         names = {tool["name"] for tool in tools["result"]["tools"]}
         self.assertIn("pulse_map_route", names)
         self.assertIn("pulse_routine_save", names)
+        self.assertIn("pulse_browser_observe", names)
+        self.assertIn("pulse_browser_click", names)
+        self.assertIn("pulse_browser_replay", names)
+
+    def test_browser_write_click_requires_effect_authorization(self):
+        self.server.service.record_screen({
+            "app_id": "browser", "url": "https://example.test/", "title": "Example",
+            "viewport": {"width": 800, "height": 600},
+            "anchors": [{"id": "submit", "role": "button", "label": "Submit",
+                         "bounds": {"x": .4, "y": .4, "width": .2, "height": .1},
+                         "actionable": True, "effect": "write"}],
+        })
+        screen_id = next(iter(self.server.service.store.load_map("browser").screens))
+        with self.assertRaises(PermissionError):
+            self.server.service.browser_click({"app_id": "browser", "expected_screen": screen_id,
+                                                "anchor_id": "submit", "port": 1})
 
     def test_record_grid_and_route_through_tools(self):
         first = self.call("pulse_map_record_screen", {

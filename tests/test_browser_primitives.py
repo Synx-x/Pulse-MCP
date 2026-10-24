@@ -498,6 +498,54 @@ class ToolRegistrationTests(unittest.TestCase):
         self.assertEqual(scroll["required"], ["expected_screen"])
 
 
+class BrowserReplayTests(unittest.TestCase):
+    """Replay checks each step against the settled screen, and stops on a real divergence."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.service = PulseService(Store(self.temp.name))
+        FakeDriver.calls = []
+        FakeDriver.observation_sequence = []
+        FakeDriver.click_ok = True
+        self.start = {**observation(field()), "title": "Start"}
+        self.end = {**observation(field(), title="End")}
+        self.service.record_screen(self.start)
+        self.service.record_screen(self.end)
+        self.service.record_transition({"app_id": "browser",
+                                        "source": screen_id_at(self.start),
+                                        "anchor_id": "email",
+                                        "target": screen_id_at(self.end), "verified": True})
+        self.patcher = patch("pulse.service.BrowserDriver", FakeDriver)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def replay(self):
+        return self.service.browser_replay({"app_id": "browser",
+                                            "start": screen_id_at(self.start),
+                                            "target": screen_id_at(self.end),
+                                            "authorized_effects": ["write"], "port": 9222})
+
+    def test_a_late_page_update_still_matches_its_edge(self):
+        """A step whose page updates after the click must not be called divergence."""
+        FakeDriver.observation_sequence = [self.start, self.start, self.end, self.end]
+        FakeDriver.next_observation = self.end
+        result = self.replay()
+        self.assertTrue(result["completed"])
+        self.assertEqual(result["steps_completed"], 1)
+
+    def test_a_real_divergence_stops_the_route_without_acting_further(self):
+        elsewhere = observation(field(), title="Elsewhere")
+        FakeDriver.observation_sequence = [self.start, self.start, elsewhere, elsewhere]
+        FakeDriver.next_observation = elsewhere
+        result = self.replay()
+        self.assertFalse(result["completed"])
+        self.assertEqual(result["steps_completed"], 0)
+        self.assertIn("diverged", result["reason"])
+
+
 class BrowserScrollRouteTests(unittest.TestCase):
     """A scroll must join a route, because a scroll edge names no page anchor."""
 
@@ -506,6 +554,7 @@ class BrowserScrollRouteTests(unittest.TestCase):
         self.service = PulseService(Store(self.temp.name))
         FakeDriver.calls = []
         FakeDriver.observation_sequence = []
+        FakeDriver.next_observation = observation(field())
         FakeDriver.next_scroll = {"before": {"x": 0, "y": 0}, "after": {"x": 0, "y": 1200},
                                   "max": {"x": 0, "y": 3000}}
         self.patcher = patch("pulse.service.BrowserDriver", FakeDriver)
@@ -519,10 +568,12 @@ class BrowserScrollRouteTests(unittest.TestCase):
         top = {**observation(field()), "scroll": {"x": 0, "y": 0}}
         self.service.record_screen(top)
         moved = {**observation(field()), "scroll": {"x": 0, "y": 1200}}
-        FakeDriver.observation_sequence = [top, moved]
         top_id = screen_id_at(top)
         bottom_id = screen_id_at(moved)
         self.service.record_screen(moved)
+        # The settled read sees the new offset twice, which ends the poll.
+        FakeDriver.observation_sequence = [top, observation(field()), moved, moved]
+        FakeDriver.next_observation = moved
         result = self.service.browser_scroll({"app_id": "browser", "expected_screen": top_id,
                                               "dy": 1200, "port": 9222})
         self.assertEqual(result["to_screen"], bottom_id)

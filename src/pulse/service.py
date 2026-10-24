@@ -22,6 +22,9 @@ MAX_SCROLL_PIXELS = 4096
 # repeats twice, or until the deadline bounds the cost on a page that never settles.
 SETTLE_QUIET_S = 0.15
 SETTLE_DEADLINE_S = 4.0
+# An action that changes nothing must not pay the whole deadline. A short grace
+# window is enough to catch a slow no-op, and a change is still followed to its end.
+SETTLE_UNCHANGED_S = 0.6
 
 # A scroll transition carries this anchor id prefix plus its two pixel deltas.
 # A scroll edge has no page anchor, so this id is the only thing that marks it.
@@ -90,16 +93,21 @@ class PulseService:
         An action on an async page changes the DOM after the call returns. One
         immediate read then sees the old screen and the transition goes
         unrecorded. Repeat reads until two agree, and stop at the deadline so a
-        page that never settles still yields its last state.
+        page that never settles still yields its last state. A page still on the
+        expected screen gets a shorter grace, because an action that changed
+        nothing should not cost the full wait.
         """
         import time
-        deadline = time.monotonic() + SETTLE_DEADLINE_S
+        started = time.monotonic()
+        deadline = started + SETTLE_DEADLINE_S
+        unchanged_by = started + SETTLE_UNCHANGED_S
         previous = None
         raw = driver.observe(app_id, screenshot_digest=False)
         while True:
             current = screen_id_at(raw)
             settled = current == previous and current != expected
-            if settled or time.monotonic() >= deadline:
+            limit = deadline if current != expected else unchanged_by
+            if settled or time.monotonic() >= limit:
                 break
             previous = current
             time.sleep(SETTLE_QUIET_S)
@@ -426,7 +434,6 @@ class PulseService:
                 raise ValueError("mapped route anchor disappeared")
             if anchor.effect != "read" and anchor.effect not in authorized:
                 raise PermissionError(f"route includes {anchor.effect} action; explicit authorization required")
-        from .contracts import ScreenState
         driver = BrowserDriver(port)
         completed = []
         try:
@@ -449,8 +456,11 @@ class PulseService:
                     y = (anchor.bounds.y + anchor.bounds.height / 2) * source.viewport["height"]
                     driver.click(x, y)
                 is_last = index == len(plan["steps"]) - 1
-                raw = driver.observe(app_id, screenshot_digest=is_last)
-                observed = screen_id_at(raw)
+                # A step on an async page lands after the click returns, so the
+                # check reads the settled screen. An unsettled read reports a
+                # divergence that a second look would clear.
+                raw, observed = self.settled_observation(
+                    driver, app_id, edge["source"], screenshot_digest=is_last)
                 if observed != edge["target"]:
                     raw["screenshot_sha256"] = driver.observe(app_id, screenshot_digest=True)["screenshot_sha256"]
                     self.record_screen(raw)

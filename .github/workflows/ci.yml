@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: python3 -m pip install -e .
+      - name: Compile
+        run: python3 -m compileall -q src tests
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: python3 -m unittest discover -s tests -v
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install repo-release validator
+        run: git clone --depth 1 https://github.com/Synx-x/repo-release /tmp/rr
+      - name: Gate this repository
+        run: python3 /tmp/rr/scripts/validate.py . --profile public --domain auto

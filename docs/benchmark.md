@@ -48,3 +48,35 @@ screenshot to verify those anchors. This is an in-process MCP driver test, not
 an end-to-end harness benchmark. It excludes model time, Herdr transport, and
 other desktop applications. Next gates are paired runs through Claude/Codex on
 representative browser and desktop workflows, with success preserved.
+
+## Claude model-in-the-loop browser route
+
+Date: 2026-10-24. The test used a dedicated temporary Chromium profile, a
+loopback-only five-state page, and the local Pulse MCP server. Four sequential
+button transitions led to “Workflow complete”; a reset control returned the
+fixture to the same start state between trials. Pulse learned and verified the
+route before timing. The saved map had six observed screens and five verified
+edges (the four-step route plus reset), with each screen’s anchors placed on
+the 8×12 grid.
+
+The baseline agent observed the page and made four separately guarded
+`pulse_browser_click` calls. In these runs Claude chose to re-observe between
+clicks, for nine Pulse calls total. The replay agent made one
+`pulse_browser_replay` call. Both paths used Claude Code with the same recorded
+backend, Haiku 5.5; each of the three paired trials reached the same final
+screen. The replay tool reported all four transitions verified.
+
+| Measure | Four guarded clicks | One verified replay | p50 reduction |
+| --- | ---: | ---: | ---: |
+| Claude-reported duration | 42.757, 42.798, 40.364 s | 17.422, 16.483, 17.385 s | 59.3% |
+| CLI process wall time | 47.046, 46.705, 44.242 s | 21.452, 20.313, 21.368 s | 54.2% |
+
+These are three paired runs of one deterministic local browser route. Wall time
+includes launching a fresh Claude CLI process on both sides. This is the first
+model-in-the-loop result above the 50% target, but it does not establish that
+gain for Codex, desktop tasks, longer or visual-only flows, or live sites. The
+`ultrafast` model alias was not a reliable way to pin the backend in this CLI:
+the successful alias-started baseline switched to Haiku 5.5, and a separate
+replay attempt using the alias failed before any Pulse call. The included runs
+therefore compare the recorded Haiku 5.5 backend on both sides; they are not a
+DeepSeek UltraFast benchmark.

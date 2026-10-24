@@ -115,12 +115,11 @@ python3 -m compileall -q src tests
 ## Performance target
 
 Pulse aims for at least 50% lower median end-to-end time than a model-in-the-loop
-computer-use baseline, with verified success preserved. This repository has no
-live harness-level benchmark result yet. Paired local MCP driver tests in
-[docs/benchmark.md](docs/benchmark.md) measured a three-step browser route at
-69.0% lower p50 latency and a two-step VNC-backed desktop route at 68.9% lower
-p50 latency than individual guarded clicks. Neither includes model thinking or
-hosted agent transport. The gate is repeated, paired runs through Claude/Codex
-on representative browser and desktop tasks, with task success, false success,
-side effects, wall time, model calls, retries, and fallback recorded for every
-run.
+computer-use baseline, with verified success preserved. Three paired Claude
+Code runs on one local browser route measured 54.2% lower p50 CLI wall time for
+verified replay, with all six runs succeeding. Paired local MCP driver tests
+measured 69.0% lower p50 latency on a browser route and 68.9% on a VNC-backed
+desktop route. Results and scope limits are in [docs/benchmark.md](docs/benchmark.md).
+The harness-level result still needs replication with Codex, desktop tasks, and
+more representative workflows. Track task success, false success, side
+effects, wall time, model calls, retries, and fallback for every run.

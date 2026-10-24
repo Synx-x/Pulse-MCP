@@ -1,197 +1,243 @@
 # Pulse
 
-Pulse gives computer-use agents a shared screen map and a place to save verified
-workflows. It is a Python MCP server with no runtime package dependencies.
+A screen map and verified-workflow store for computer-use agents.
 
-## Current slice
+Pulse records what a page or desktop looks like. It connects screens with
+transitions it watched succeed. Then it replays a whole route in one call.
 
-The MCP tools record screen observations from any driver, place their anchors on
-a normalized 8×12 grid, connect screens with verified transitions, and return
-the shortest verified route to a visible anchor or screen. Successful routines
-can be saved as reviewable candidates. Pulse does not execute saved routines in
-this version.
+Python MCP server. No runtime dependencies.
 
-Screen observations contain roles, labels, normalized bounds, and a viewport
-size. They do not contain form values or screenshot bytes. URLs have query and
-fragment data removed before storage. Routine steps reject literal values;
-use an `input_ref` and provide that value at execution time in a future driver.
-Map and routine files are written atomically with owner-only permissions.
+## The problem
 
-The browser adapter observes a Chromium page through its local DevTools
-endpoint. It records visible DOM controls, roles, labels, selected state, and
-viewport-relative bounds; it stores only a screenshot digest, never screenshot
-bytes. Browser clicks require a current mapped screen and explicit effect
-authorization for controls classified as writes. A changed screen records a
-verified transition.
-A click reads the page again until two reads agree on one screen id, up to four
-seconds. A clicked page that updates asynchronously otherwise records no
-transition. The same polling covers keys, fills and scrolls.
-A chosen control reports `selected: true` when it carries a `selected` class or an
-`aria-current` attribute. Such a control changes no text and no bounds, so that
-flag is the only sign the click landed. The React App Lab component outline works
-this way.
-The observer reads a checkbox or radio input's text from the `<label>` it belongs
-to, then skips that label as a separate anchor. The observer does this because a
-styled control hides its own box at opacity 0 and still owns the click. The
-TodoMVC per-item toggle is the case that prompted this rule.
-A paragraph is not mapped. A page that reports an action only in a `<p>` therefore
-changes no screen id, and the map looks unchanged after the action. The demoqa
-buttons page writes "You have done a dynamic click" into a paragraph. A route
-needs an observable signal, so a paragraph-only page needs one mapped anchor to
-change or the click records nothing.
-Once a route has been learned, `pulse_browser_replay` executes it in one MCP
-call, verifies each expected DOM state, and stops on divergence. It captures a
-screenshot digest for the final state only; intermediate route checks use the
-structured DOM map. A finished route reports the final state it already read:
-screen id, title, viewport, anchor count, anchors and digest. A caller therefore
-needs no separate observe call to confirm the route landed.
+An agent driving a UI pays the same cost on every step. Observe, decide, click,
+observe again to confirm. A route it solved yesterday is solved from scratch
+today.
 
-A page target is chosen per call. When one CDP port serves several tabs, a call
-without a `target_url` takes the newest page target, which may not be the page
-under test. Pass `target_url` on any browser call to pin the page it names, and
-call `pulse_browser_targets` first to see every tab the port serves and which one
-a call would choose. A background tab can stall a screenshot capture, so a failed
-capture reports no digest and the observation still returns its anchors.
+Pulse keeps the map between runs. The learned route replays as one call, and the
+replay still verifies every state it crosses.
 
-The Linux desktop adapter reads `computer-use-linux` accessibility snapshots
-and screenshots. It places accessible elements on the same normalized grid;
-when an actionable element has missing or zero-position bounds, optional local
-Tesseract OCR matches its accessible label to screenshot coordinates. Pulse
-stores the screenshot digest and anchor metadata, not screenshot bytes or form
-values. Desktop actions use the existing CUL input path. Browser and desktop
-routes share the same verified-transition planner.
+```mermaid
+flowchart LR
+  O[observe] --> M[("map<br/>screens + anchors")]
+  M --> T[("transitions<br/>verified edges")]
+  T --> R[shortest route]
+  R --> P[replay]
+  P -->|new screens| M
+```
 
-## Install for development
+## With Pulse and without
+
+```mermaid
+flowchart TB
+  subgraph W["Without Pulse: every step re-observes"]
+    direction LR
+    W1[observe] --> W2[click] --> W3[observe] --> W4[click] --> W5[observe] --> W6[click] --> W7[observe]
+  end
+  subgraph P["With Pulse: one verified route"]
+    direction LR
+    P1["replay call"] --> P2{"verify each state"} --> P3["final state returned"]
+  end
+  W ~~~ P
+```
+
+The saving tracks how much observation a route removes. Six guarded clicks
+become one call. A single click saves one screenshot digest and nothing else.
+
+## Measured results
+
+Every number below comes from `docs/benchmark.md`, on local fixtures and public
+sites, on 2026-10-24.
+
+### One call against many
+
+| Workflow | Baseline | Replay | Saved | Evidence |
+| --- | ---: | ---: | ---: | --- |
+| 6 clicks, in process | 4,328 ms | 1,177 ms | 72.8% | 3 trials each |
+| 3 clicks, in process | 309.0 ms | 95.9 ms | 69.0% | 7 trials each |
+| 2 desktop clicks | 3,364.9 ms | 1,047.7 ms | 68.9% | 7 trials each |
+| 4 transitions, model in loop | 42.76 s | 17.39 s | 59.3% | 3 paired trials |
+
+### Whole workflows, live sites
+
+| Workflow | Calls | Baseline | Replay | Change |
+| --- | ---: | ---: | ---: | ---: |
+| Add two elements | 2 → 1 | 751 ms | 177 ms | −76.4% |
+| Toggle a checkbox | 1 → 1 | 440 ms | 231 ms | −47.4% |
+| Scroll a long page | 1 → 1 | 364 ms | 275 ms | −24.4% |
+| Complete a todo | 3 → 3 | 903 ms | 773 ms | −14.5% |
+
+### Nine workflows through each harness
+
+| Harness | Baseline p50 | Replay p50 | Speed increase | Runs |
+| --- | ---: | ---: | ---: | ---: |
+| Claude Code | 17.83 s | 12.49 s | 42.8% | 35/35 correct |
+| Codex | 34.55 s | 23.00 s | 50.2% | 36/36 correct |
+
+The six-click workflow alone speeds up 278.2% through Claude Code and 276.2%
+through Codex. Both harnesses hit that target on sequential work. Neither
+reaches it on random or single-step requests.
+
+```mermaid
+xychart-beta
+  title "p50 wall time, nine live workflows"
+  x-axis ["baseline", "replay"]
+  y-axis "seconds" 0 --> 40
+  bar [17.83, 12.49]
+```
+
+## Good cases
+
+Pulse pays for itself when a route removes observation.
+
+| Case | Why it gains | Measured |
+| --- | --- | --- |
+| Many sequential steps | one guarded step leaves per transition | 6 clicks: 72.8% saved in process, 278.2% faster in Claude |
+| A route you run again | learning cost spreads over every rerun | nine workflows: 42.8% and 50.2% |
+| Deterministic DOM | screen ids match across runs | most workflows 2/2 or 3/3 |
+| Desktop with a settled tree | accessibility map replaces screenshots | 68.9% saved over 2 clicks |
+
+## Base cases
+
+Pulse gains little or nothing here. Each limit has a reason.
+
+| Case | Why it does not gain | Measured |
+| --- | --- | --- |
+| A single step | both paths observe twice, so a route saves one digest | scroll: 25.0% slower in Claude |
+| A short workflow | the CLI launch floor, 5.7 s Claude and 11.4 s Codex, dominates | two clicks: 23.3% faster |
+| A page typed value reappears on | the page renders the value as mapped text | TodoMVC |
+| Lazy-loading content | settled height differs per run | replay stopped 1/3, then 3/3 after a settle wait |
+| Action reported only in a `<p>` | no mapped anchor changes, so no edge forms | demoqa buttons |
+
+Replay pays one settle wait per step. Replay pays 631 ms for the call wrapping a
+4.6 ms read. Replay needs that wait to record an async step correctly, so the
+cost is a correctness decision rather than a tuning knob.
+
+## Install
 
 ```sh
 python3 -m pip install -e .
 pulse-mcp
 ```
 
-The default data directory is `~/dev/pulse-data` when `~/dev` exists, otherwise
-`$XDG_STATE_HOME/pulse` (or `~/.local/state/pulse`). Set `PULSE_STATE_DIR` to
-choose another directory.
+The default data directory is `~/dev/pulse-data` when `~/dev` exists. Otherwise
+it is `$XDG_STATE_HOME/pulse`, or `~/.local/state/pulse`. Set `PULSE_STATE_DIR`
+to choose another directory.
 
-## Connect as an MCP server
+## Connect
 
 Pulse speaks MCP over stdio. `pulse-mcp` reads JSON-RPC on stdin and writes it
 on stdout, so each client launches its own child process. Pulse opens no port
 and runs nothing between sessions.
 
-For Claude Code, install the package and run:
-
 ```sh
 claude mcp add --scope user pulse -- pulse-mcp
 ```
 
-For Codex, add this to `~/.codex/config.toml`:
-
 ```toml
+# ~/.codex/config.toml
 [mcp_servers.pulse]
 command = "pulse-mcp"
 ```
 
-Restart the harness after adding the server. Both harnesses expose the same MCP
-tools; agents do not need a special Pulse command.
+Restart the harness after adding the server. Both harnesses expose the same
+tools.
 
 ## Tools
 
 | Tool | Purpose |
 | --- | --- |
-| `pulse_map_record_screen` | Save an observation and return its spatial grid |
-| `pulse_map_record_transition` | Save a transition, marked verified or unverified |
-| `pulse_map_get` | Read a whole map or one screen with its grid |
-| `pulse_map_route` | Find a shortest route over verified transitions |
-| `pulse_routine_save` | Save a successful routine as a candidate |
-| `pulse_routine_list` | List candidates |
-| `pulse_routine_get` | Read a candidate |
-| `pulse_browser_observe` | Observe and map visible controls from a local Chromium tab |
-| `pulse_browser_targets` | List the page tabs one CDP port serves and which one a call chooses |
+| `pulse_map_record_screen` | Save an observation, return its grid |
+| `pulse_map_record_transition` | Save an edge, verified or not |
+| `pulse_map_get` | Read a map, or one screen with its grid |
+| `pulse_map_route` | Shortest route over verified edges |
+| `pulse_routine_save` / `list` / `get` | Save and read routine candidates |
+| `pulse_browser_observe` | Map visible controls in a local Chromium tab |
+| `pulse_browser_targets` | List tabs on one CDP port, and which a call picks |
 | `pulse_browser_click` | Click a mapped control after a stale-screen check |
-| `pulse_browser_fill` | Type into one mapped field, guarded, with no implicit submit |
+| `pulse_browser_fill` | Type into one mapped field, guarded, no implicit submit |
 | `pulse_browser_key` | Send `enter` or `escape` to the focused element |
-| `pulse_browser_scroll` | Scroll the viewport by a bounded delta and re-map it |
-| `pulse_browser_replay` | Execute a verified route in one call with state checks |
-| `pulse_desktop_observe` | Map a Linux desktop from accessibility and screenshot data |
-| `pulse_desktop_click` | Click a mapped desktop control after a stale-screen check |
-| `pulse_desktop_replay` | Execute a verified desktop route with state checks |
+| `pulse_browser_scroll` | Scroll a bounded delta and re-map |
+| `pulse_browser_replay` | Run a verified route in one call |
+| `pulse_desktop_observe` | Map a Linux desktop from accessibility and screenshots |
+| `pulse_desktop_click` | Click a mapped desktop control, guarded |
+| `pulse_desktop_replay` | Run a verified desktop route |
 
-Anchor bounds are normalized: `x`, `y`, `width`, and `height` each use the
-viewport as a 0–1 scale. An anchor is placed in the grid cell containing its
-center. Transitions become route-eligible only after they are observed to
-change screen state. Browser controls are conservatively marked as writes and
-require `authorized_effects: ["write"]` on a click. Clicks use native CDP mouse
-input at the mapped control center; stale screen ids stop the action.
+Anchor bounds are normalized. `x`, `y`, `width` and `height` each use the
+viewport as a 0–1 scale, and an anchor sits in the grid cell holding its center.
+An edge becomes route-eligible only after it is seen to change screen state.
 
-Start an isolated browser with remote debugging enabled. For a quick local test:
+## Start a browser
 
 ```sh
 chromium --headless=new --no-sandbox --remote-debugging-port=9222 \
   --user-data-dir=/tmp/pulse-chromium about:blank
 ```
 
-The server reads port 9222 by default; tools can pass another local debugging
-port, or set `PULSE_CDP_PORT` in the MCP server environment. Connect only a
-browser profile intended for agent control.
+The default port is 9222. Tools can pass another local port, or set
+`PULSE_CDP_PORT`. Connect only a browser profile you intend an agent to control.
 
-A fill keeps the typed value out of every map, tool result, and saved routine. A
-fill reports only the length it typed, and a fill refuses password, file, hidden,
-checkbox, radio, disabled and read-only fields. A fill confirms the entry by
-reading the field back, and a fill sends no key, so a fill cannot submit a form.
-Two further rules govern focus and line endings:
+A call without `target_url` takes the newest page target, which may not be the
+page under test. A call with `target_url` stays on the tab it names. A call
+should follow `pulse_browser_targets` when one port serves several tabs, because
+that tool reports what the port holds and which tab a call would pick. A call
+that captures a stalled background tab reports no digest, and the observation
+still returns its anchors.
 
-- A fill drops focus once it confirms, because a focused field's text appears in
-  the next observation's anchor labels. Pass `keep_focus` when a fill is followed
-  by `pulse_browser_key`, which needs that focus for the key to land.
-- A single-line field loses a trailing newline, so the entry is trimmed for that
-  field and confirmed against the trimmed text.
+## What a map holds
 
-A scroll position takes part in the screen id, so two positions in one long page
-do not answer to the same id and a stale-screen check cannot pass wrongly. A
-scroll that changes the screen records a verified transition, so the step can
-join a route. `pulse_browser_replay` repeats that step from the deltas in its edge.
+| Holds | Never holds |
+| --- | --- |
+| roles, labels, selected state | form values |
+| normalized bounds, viewport size | screenshot bytes |
+| screenshot digest | URL query or fragment |
 
-A page can undo the fill guard by displaying the value. The page renders the value
-as visible text, Pulse maps that text as an anchor label like any other, and the
-value reaches the map in that form. TodoMVC does this: the typed title becomes the
-row's checkbox label. Pulse cannot redact that without dropping real page content,
-so do not type a secret into a field whose value the page then shows.
+Map files are written atomically with owner-only permissions. A fill keeps its
+value out of every map, tool result and saved routine. A fill reports only the
+length it typed. A fill refuses password, file, hidden, checkbox, radio,
+disabled and read-only fields. A fill confirms by reading the field back, and
+sends no key, so it cannot submit.
 
-Desktop tools require `computer-use-linux mcp` on `PATH`; set
-`PULSE_COMPUTER_USE_BIN` to choose a specific binary. Tesseract is optional and
-is used only to place controls whose accessibility bounds are missing.
+Two rules govern focus and line endings:
 
-## Development checks
+- A fill drops focus once it confirms, because a focused field's text reaches
+  the next observation's anchor labels. Pass `keep_focus` before
+  `pulse_browser_key`.
+- A single-line field loses a trailing newline, so the entry is trimmed and
+  confirmed against the trimmed text.
+
+A scroll position takes part in the screen id. Two positions in one long page
+therefore have separate ids, and a stale-screen check cannot pass wrongly.
+
+**The fill guard has one leak.** A value reaches the map when the page displays
+it. A value arrives as an anchor label like any other text. A value cannot be
+redacted without dropping real page content. A value never belongs in a secret
+field the page shows, and TodoMVC shows exactly that: a typed title becomes the
+row's checkbox label.
+
+## Desktop
+
+The desktop adapter reads `computer-use-linux` accessibility snapshots and
+screenshots. The desktop adapter places accessible elements on the same
+normalized grid. The desktop adapter needs `computer-use-linux mcp` on `PATH`,
+and `PULSE_COMPUTER_USE_BIN` picks a specific binary. The desktop adapter calls
+Tesseract only to place a control whose accessibility bounds are missing.
+Browser routes and desktop routes share one planner.
+
+## Limits
+
+Pulse does not execute saved routines in this version. Routine steps reject
+literal values, so a step carries an `input_ref` and a future driver supplies
+the value.
+
+A paragraph is not mapped. A page that reports an action only in a `<p>` changes
+no screen id, so the map looks unchanged and no route learns.
+
+## Development
 
 ```sh
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src tests
 ```
 
-## Performance target
-
-The target holds on sequential work and misses on random requests. The target's
-sequential case is six clicks in a row, which speed up by 278.2% through Claude
-Code and 276.2% through Codex. The target's random case reaches 23.3% on two
-clicks through Claude Code and 75.4% through Codex. Its single-step case runs
-25.0% slower on the scroll workflow through Claude Code and 12.4% faster through
-Codex. The target's overall figure is a 42.8% speed increase through Claude Code
-and 50.2% through Codex, so the broad 200% target remains open.
-
-Every measured workflow carries a route, and each route saves one guarded step
-per transition:
-
-- Six clicks in a row, in process: a 72.8% reduction, or 267.7% faster. Through
-  Claude Code the same workflow runs 43.63 s to 11.54 s, a 278.2% speed increase,
-  and through Codex 84.15 s to 22.37 s, which is 276.2%.
-- Two clicks: 23.3% faster through Claude Code and 75.4% through Codex. Two
-  category clicks on an unseen site reach 39.3% and 57.5%.
-- A single step: 25.0% slower on the scroll workflow through Claude Code, and
-  12.4% faster through Codex.
-- Nine live workflows: a 42.8% speed increase through Claude Code and 50.2%
-  through Codex, after replay began returning its final state. Every run reached
-  the expected end state.
-
-Results, the four defects the live sites exposed, and the scope limits are in
-[docs/benchmark.md](docs/benchmark.md). Track task success, false success, side
-effects, wall time, model calls, retries, and fallback for every run.
+Results, the four defects live sites exposed, and the scope of each number are
+in [docs/benchmark.md](docs/benchmark.md).

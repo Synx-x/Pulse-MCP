@@ -132,6 +132,12 @@ do not answer to the same id and a stale-screen check cannot pass wrongly. A
 scroll that changes the screen records a verified transition, so the step can
 join a route. `pulse_browser_replay` repeats that step from the deltas in its edge.
 
+A page can undo the fill guard by displaying the value. The page renders the value
+as visible text, Pulse maps that text as an anchor label like any other, and the
+value reaches the map in that form. TodoMVC does this: the typed title becomes the
+row's checkbox label. Pulse cannot redact that without dropping real page content,
+so do not type a secret into a field whose value the page then shows.
+
 Desktop tools require `computer-use-linux mcp` on `PATH`; set
 `PULSE_COMPUTER_USE_BIN` to choose a specific binary. Tesseract is optional and
 is used only to place controls whose accessibility bounds are missing.

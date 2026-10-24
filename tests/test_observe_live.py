@@ -42,6 +42,7 @@ PAGE = """<!doctype html><title>Fixture</title>
   <label for="plain">Plain task</label>
 </div>
 <button id="go">Add Element</button>
+<button id="outline" class="selected">TaskList</button>
 <input id="field" placeholder="New Todo Input">
 """
 
@@ -88,6 +89,12 @@ class LiveObserveTests(unittest.TestCase):
         labels = [a["label"] for a in self.anchors()]
         self.assertIn("Add Element", labels)
         self.assertIn("New Todo Input", labels)
+
+    def test_a_chosen_control_reports_itself_selected(self):
+        """A component outline changes only a class, so the class is the evidence."""
+        outline = next(a for a in self.anchors() if a["label"] == "TaskList")
+        self.assertTrue(outline["selected"])
+        self.assertFalse(next(a for a in self.anchors() if a["label"] == "Add Element")["selected"])
 
 
 if __name__ == "__main__":

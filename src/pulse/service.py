@@ -17,6 +17,12 @@ from .drivers.computer_use import ComputerUseDriver
 # One scroll call moves at most one viewport height, which keeps each step reviewable.
 MAX_SCROLL_PIXELS = 4096
 
+# A page may update asynchronously after an action, so one immediate read can
+# return the pre-action screen and record no transition. Poll until the screen id
+# repeats twice, or until the deadline bounds the cost on a page that never settles.
+SETTLE_QUIET_S = 0.15
+SETTLE_DEADLINE_S = 4.0
+
 # A scroll transition carries this anchor id prefix plus its two pixel deltas.
 # A scroll edge has no page anchor, so this id is the only thing that marks it.
 SCROLL_ANCHOR_PREFIX = "scroll"
@@ -75,6 +81,32 @@ def screen_id_at(raw: Mapping[str, Any]) -> str:
 class PulseService:
     def __init__(self, store: Store | None = None):
         self.store = store or Store()
+
+    @staticmethod
+    def settled_observation(driver, app_id: str, expected: str,
+                            *, screenshot_digest: bool = True) -> tuple[dict, str]:
+        """Read the page until its screen id holds still, then return that read.
+
+        An action on an async page changes the DOM after the call returns. One
+        immediate read then sees the old screen and the transition goes
+        unrecorded. Repeat reads until two agree, and stop at the deadline so a
+        page that never settles still yields its last state.
+        """
+        import time
+        deadline = time.monotonic() + SETTLE_DEADLINE_S
+        previous = None
+        raw = driver.observe(app_id, screenshot_digest=False)
+        while True:
+            current = screen_id_at(raw)
+            settled = current == previous and current != expected
+            if settled or time.monotonic() >= deadline:
+                break
+            previous = current
+            time.sleep(SETTLE_QUIET_S)
+            raw = driver.observe(app_id, screenshot_digest=False)
+        if screenshot_digest:
+            raw = driver.observe(app_id)
+        return raw, screen_id_at(raw)
 
     def record_screen(self, args: Mapping[str, Any]) -> dict[str, Any]:
         app_id = safe_id(str(args.get("app_id", "")))
@@ -188,15 +220,13 @@ class PulseService:
             raise PermissionError(f"clicking this {anchor.effect} control requires explicit authorization")
         driver = BrowserDriver(port)
         try:
-            current_raw = driver.observe(app_id)
-            from .contracts import ScreenState
-            current = ScreenState.create(current_raw)
-            if current.id != expected:
-                raise ValueError(f"stale map: expected screen {expected}, observed {current.id}; observe and replan")
+            current = screen_id_at(driver.observe(app_id))
+            if current != expected:
+                raise ValueError(f"stale map: expected screen {expected}, observed {current}; observe and replan")
             center_x = (anchor.bounds.x + anchor.bounds.width / 2) * before.viewport["width"]
             center_y = (anchor.bounds.y + anchor.bounds.height / 2) * before.viewport["height"]
             driver.click(center_x, center_y)
-            after_raw = driver.observe(app_id)
+            after_raw, after_id = self.settled_observation(driver, app_id, expected)
         finally:
             driver.close()
         saved = self.record_screen(after_raw)
@@ -270,6 +300,9 @@ class PulseService:
                 # labels. Forgetting focus keeps the value out of the map.
                 driver.blur_field()
                 summary = {"blurred": True}
+            # A live filter or counter can change the screen after a fill, so the
+            # read settles first. Only the final digest-bearing read leaves here.
+            self.settled_observation(driver, app_id, expected, screenshot_digest=False)
             after_raw = redact(driver.observe(app_id), value)
             after_raw = redact(redact(after_raw, entry), value)
         finally:
@@ -301,7 +334,11 @@ class PulseService:
             if current != expected:
                 raise ValueError(f"stale map: expected screen {expected}, observed {current}; observe and replan")
             offsets = driver.scroll_by(dx, dy)
-            after_raw = driver.observe(app_id)
+            # The offset is the state a scroll changes, so the settled read must
+            # carry the final offset rather than an intermediate one.
+            after_raw, after_id = self.settled_observation(driver, app_id, expected)
+            after_raw = {**after_raw, "scroll": offsets.get("after", after_raw.get("scroll"))}
+            after_id = screen_id_at(after_raw)
         finally:
             driver.close()
         saved = self.record_screen(after_raw)
@@ -353,7 +390,7 @@ class PulseService:
                 raise ValueError(f"stale map: expected screen {expected}, observed {current}; observe and replan")
             focus = driver.focused_tag()
             driver.press_key(name)
-            after_raw = driver.observe(app_id)
+            after_raw, after_id = self.settled_observation(driver, app_id, expected)
         finally:
             driver.close()
         saved = self.record_screen(after_raw)

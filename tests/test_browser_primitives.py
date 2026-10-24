@@ -29,6 +29,7 @@ class FakeDriver:
     """Stand-in for BrowserDriver. Records every page call the service makes."""
 
     calls: list[tuple] = []
+    click_ok: bool = False
 
     def __init__(self, port=9222, **_):
         self.port = port
@@ -85,7 +86,9 @@ class FakeDriver:
         return FakeDriver.next_scroll
 
     def click(self, x, y):
-        raise AssertionError("fill and scroll must not click")
+        FakeDriver.calls.append(("click", x, y))
+        if not FakeDriver.click_ok:
+            raise AssertionError("fill and scroll must not click")
 
     def close(self):
         FakeDriver.calls.append(("close",))
@@ -293,13 +296,24 @@ class BrowserKeyTests(unittest.TestCase):
         self.assertNotIn("press_key", [call[0] for call in FakeDriver.calls])
 
     def test_enter_is_sent_once_on_the_expected_screen(self):
-        FakeDriver.observation_sequence = [observation(field()),
-                                           observation(field(), title="Submitted")]
+        submitted = observation(field(), title="Submitted")
+        FakeDriver.observation_sequence = [observation(field()), submitted, submitted]
+        FakeDriver.next_observation = submitted
         result = self.press()
         self.assertEqual([c for c in FakeDriver.calls if c[0] == "press_key"],
                          [("press_key", "enter")])
         self.assertEqual(result["sent"], "enter")
         self.assertTrue(result["state_changed"])
+
+    def test_an_async_page_is_read_again_until_it_settles(self):
+        """A click on an async page changes the DOM after the call returns."""
+        later = observation(field(), title="Later")
+        FakeDriver.observation_sequence = [observation(field()), observation(field()),
+                                           later, later]
+        FakeDriver.next_observation = later
+        result = self.press()
+        self.assertTrue(result["state_changed"])
+        self.assertEqual(result["to_screen"], screen_id_at(later))
 
     def test_a_key_press_stops_on_a_stale_screen(self):
         FakeDriver.next_observation = observation(field(), title="Other page")
@@ -415,6 +429,59 @@ class BrowserScrollTests(unittest.TestCase):
                                                            "dy": -120}}})
         value = json.loads(response["result"]["content"][0]["text"])
         self.assertEqual(value["dy"], -120)
+
+
+class BrowserClickTests(unittest.TestCase):
+    """A click checks the scrolled screen id and reads the page again until it holds."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.service = PulseService(Store(self.temp.name))
+        FakeDriver.calls = []
+        FakeDriver.observation_sequence = []
+        FakeDriver.click_ok = True
+        FakeDriver.next_observation = observation(field())
+        self.patcher = patch("pulse.service.BrowserDriver", FakeDriver)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def record(self, **overrides):
+        raw = {**observation(field()), "screenshot_sha256": None, **overrides}
+        return self.service.record_screen(raw)["screen_id"]
+
+    def click(self, screen_id, **overrides):
+        args = {"app_id": "browser", "expected_screen": screen_id,
+                "anchor_id": "email", "authorized_effects": ["write"], "port": 9222}
+        args.update(overrides)
+        return self.service.browser_click(args)
+
+    def test_a_scrolled_screen_accepts_its_own_id(self):
+        """The click check once read the id without the scroll offset, so it always failed."""
+        scrolled = {"scroll": {"x": 0, "y": 1400}}
+        screen_id = self.record(**scrolled)
+        FakeDriver.next_observation = {**observation(field()), **scrolled}
+        result = self.click(screen_id)
+        self.assertEqual(result["from_screen"], screen_id)
+        self.assertIn(("click", 280.0, 138.0), FakeDriver.calls)
+
+    def test_a_click_reads_again_until_the_page_settles(self):
+        screen_id = self.record()
+        changed = observation(field(), title="After")
+        FakeDriver.observation_sequence = [observation(field()), changed, changed]
+        FakeDriver.next_observation = changed
+        result = self.click(screen_id)
+        self.assertTrue(result["state_changed"])
+        self.assertEqual(result["to_screen"], screen_id_at(changed))
+
+    def test_a_click_stops_on_a_stale_screen(self):
+        screen_id = self.record()
+        FakeDriver.next_observation = observation(field(), title="Other page")
+        with self.assertRaisesRegex(ValueError, "stale map"):
+            self.click(screen_id)
+        self.assertEqual([c for c in FakeDriver.calls if c[0] == "click"], [])
 
 
 class ToolRegistrationTests(unittest.TestCase):

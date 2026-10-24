@@ -23,6 +23,13 @@ viewport-relative bounds; it stores only a screenshot digest, never screenshot
 bytes. Browser clicks require a current mapped screen and explicit effect
 authorization for controls classified as writes. A changed screen records a
 verified transition.
+A click reads the page again until two reads agree on one screen id, up to four
+seconds. A clicked page that updates asynchronously otherwise records no
+transition. The same polling covers keys, fills and scrolls.
+A chosen control reports `selected: true` when it carries a `selected` class or an
+`aria-current` attribute. Such a control changes no text and no bounds, so that
+flag is the only sign the click landed. The React App Lab component outline works
+this way.
 The observer reads a checkbox or radio input's text from the `<label>` it belongs
 to, then skips that label as a separate anchor. The observer does this because a
 styled control hides its own box at opacity 0 and still owns the click. The

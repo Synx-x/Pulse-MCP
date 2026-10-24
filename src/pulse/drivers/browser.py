@@ -112,12 +112,17 @@ _OBSERVE = r"""(() => {
       ? (el.htmlFor ? document.getElementById(el.htmlFor) : el.querySelector('input,select,textarea'))
       : el;
     const isOn = !!(control && (control.checked === true || control.getAttribute?.('aria-checked') === 'true'));
+    // A control that marks itself chosen with a `selected` class or `aria-current`
+    // changes no text and no bounds, so the state is the only evidence of the
+    // click. The React App Lab component outline is set this way.
+    const marked = (el.classList && el.classList.contains('selected'))
+      || (el.getAttribute('aria-current') || 'false') !== 'false';
     const key = role + '\u0000' + (label || role);
     const n = (counts[key] = (counts[key] || 0) + 1);
     let hash1=2166136261, hash2=2246822519;
     for (const ch of new TextEncoder().encode(key + '\u0000' + n)) { hash1=Math.imul(hash1 ^ ch,16777619); hash2=Math.imul(hash2 ^ ch,3266489917); }
     const id='a-'+(hash1>>>0).toString(16).padStart(8,'0')+(hash2>>>0).toString(16).padStart(8,'0');
-    anchors.push({id,role,label:label || role,bounds:{x:Math.max(0,r.left)/vw,y:Math.max(0,r.top)/vh,width:(Math.min(vw,r.right)-Math.max(0,r.left))/vw,height:(Math.min(vh,r.bottom)-Math.max(0,r.top))/vh},source:'dom',actionable:action,effect:action ? 'write' : 'read',selected:isOn || el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-checked') === 'true' || el.checked === true || el.getAttribute('aria-pressed') === 'true'});
+    anchors.push({id,role,label:label || role,bounds:{x:Math.max(0,r.left)/vw,y:Math.max(0,r.top)/vh,width:(Math.min(vw,r.right)-Math.max(0,r.left))/vw,height:(Math.min(vh,r.bottom)-Math.max(0,r.top))/vh},source:'dom',actionable:action,effect:action ? 'write' : 'read',selected:isOn || marked || el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-checked') === 'true' || el.checked === true || el.getAttribute('aria-pressed') === 'true'});
   }
   return {url:location.href,title:document.title,viewport:{width:vw,height:vh},
           scroll:{x:Math.round(scrollX),y:Math.round(scrollY)},anchors};

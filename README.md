@@ -89,6 +89,14 @@ Chromium profile, CDP port and Pulse state per trial. The host focus never moved
 | Two categories | Claude Code | 19.73 s | 14.57 s | 35.3% | 4/4 correct |
 | Two categories | Codex | 36.45 s | 26.15 s | 39.4% | 4/4 correct |
 
+Nine workflows ran in the same conditions. Nine workflows moved the overall p50
+from 28.94 s to 18.64 s through Claude Code, a 55.3% speed increase. Nine
+workflows moved 39.40 s to 26.43 s through Codex, 49.1%. Nine workflows include
+six clicks at 354.1% and 256.4%, two Claude regressions, and two Codex refusals
+that stopped on a stale start screen rather than acting. Every trial recorded
+`deepseek/deepseek-v4.1-flash-ultrafast` in its own row. The per-workflow table
+is in [docs/benchmark.md](docs/benchmark.md).
+
 ```mermaid
 xychart-beta
   title "p50 wall time, nine live workflows"

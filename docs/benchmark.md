@@ -167,6 +167,46 @@ The random workflow reaches 35.3% here and 39.4% through Codex, against 23.3%
 and 75.4% in the earlier nine-workflow set. Both random figures stay far below
 the 200% target.
 
+## Nine workflows on both harnesses, inside agent desktops
+
+Date: 2026-10-24. Nine workflows, 2 paired trials per path, ran through both
+harnesses in the same conditions as the section above. Every trial recorded its
+own model. Each Claude trial recorded `deepseek/deepseek-v4.1-flash-ultrafast`,
+and each Codex trial recorded `opengateway/deepseek/deepseek-v4.1-flash-ultrafast`.
+Success is the live page read after the run.
+
+The nine workflows are all public sites: TodoMVC, the add/remove-elements demo,
+the checkboxes page, the dynamic-controls page, the infinite-scroll page, the
+React App Lab, books.toscrape.com and the demoqa checkbox tree.
+
+| Workflow | Claude base → replay | Claude speed | Codex base → replay | Codex speed |
+| --- | --- | ---: | --- | ---: |
+| Complete a todo | 28.22 s → 31.78 s | −11.2% | 47.17 s → 38.80 s | 21.6% |
+| Add two elements | 24.66 s → 13.59 s | 81.4% | 42.86 s → 24.16 s | 77.4% |
+| Add six elements | 80.82 s → 17.80 s | 354.1% | 91.67 s → 25.73 s | 256.4% |
+| Toggle a checkbox | 16.55 s → 13.69 s | 21.0% | 33.99 s → 25.24 s | 34.6% |
+| Enable dynamic controls | 16.37 s → 15.06 s | 8.7% | 46.04 s → 34.30 s | 34.2% |
+| Scroll a long page | 24.73 s → 13.73 s | 80.1% | 32.95 s → 22.66 s | 45.4% |
+| Open the app-lab board | 28.95 s → 33.50 s | −13.6% | 39.83 s → 32.27 s | 23.4% |
+| Open two categories | 36.54 s → 29.53 s | 23.7% | 50.45 s → 26.72 s | 88.8% |
+| Tick the Home tree node | 35.74 s → 21.71 s | 64.6% | 30.12 s → 26.93 s | 11.9% |
+
+Overall p50 moved 28.94 s to 18.64 s through Claude, a 55.3% speed increase, and
+39.40 s to 26.43 s through Codex, 49.1%. The sequential workflow clears the
+200% target through both harnesses, at 354.1% and 256.4%. Two Claude workflows
+regressed, and the app-lab board regressed there because a route that ends in a
+scroll reads slower than the primitive path on that page.
+
+Claude recorded 35 correct trials out of 36. Claude lost one baseline trial,
+because route learning found no verified route on the demoqa tree that day.
+Claude records that error in its row rather than dropping the row. Codex
+recorded 34 correct of 36, and both Codex misses are the two refusals below.
+
+Codex refused both demoqa replays with `stale start screen; observe and
+replan`. That is the safety property, not a defect. The tree page holds a
+remembered state between browsers, so replay saw a start screen that did not
+match the learned one and stopped without acting.
+
 ## Two harnesses on the same six workflows
 
 Date: 2026-10-24. Six workflows on public sites ran through both harnesses, 2

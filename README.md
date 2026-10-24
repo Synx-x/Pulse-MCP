@@ -34,6 +34,11 @@ The observer reads a checkbox or radio input's text from the `<label>` it belong
 to, then skips that label as a separate anchor. The observer does this because a
 styled control hides its own box at opacity 0 and still owns the click. The
 TodoMVC per-item toggle is the case that prompted this rule.
+A paragraph is not mapped. A page that reports an action only in a `<p>` therefore
+changes no screen id, and the map looks unchanged after the action. The demoqa
+buttons page writes "You have done a dynamic click" into a paragraph. A route
+needs an observable signal, so a paragraph-only page needs one mapped anchor to
+change or the click records nothing.
 Once a route has been learned, `pulse_browser_replay` executes it in one MCP
 call, verifies each expected DOM state, and stops on divergence. It captures a
 screenshot digest for the final state only; intermediate route checks use the

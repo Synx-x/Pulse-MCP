@@ -152,15 +152,18 @@ python3 -m compileall -q src tests
 ## Performance target
 
 Replay latency aims at 50% below a model-in-the-loop computer-use baseline, with
-verified success preserved. Replay latency on live public sites measured 76.4%
-below the primitive path on a two-click workflow. Replay latency on live public
-sites measured 14.5% to 47.4% below it on single-step and three-step workflows,
-because a route saves observation work rather than click count. Replay latency
-through Claude Code measured 54.2% below the baseline on p50 CLI wall time over
-three paired runs of one local browser route, with all six runs succeeding.
-Replay latency in-process measured 69.0% below it on a browser route and 68.9% on
-a VNC-backed desktop route. Results and scope limits are in
-[docs/benchmark.md](docs/benchmark.md). The harness-level result still needs
-replication with Codex, desktop tasks, and more representative workflows. Track
-task success, false success, side effects, wall time, model calls, retries, and
-fallback for every run.
+verified success preserved. Every measured workflow carries a route, and each
+route saves one guarded step per transition:
+
+- Six clicks in a row, in process: 72.8% below the primitive path. The same
+  workflow through Claude Code: 72.1% below it on p50 CLI wall time.
+- Two clicks: 43.0% below it through Claude Code and 42.0% through Codex.
+- One step: 6% above it through Claude Code and 11% below it through Codex,
+  because a route then saves one call and pays a settle wait per step.
+- Overall across six live workflows: 2% slower than the baseline through Claude
+  Code, with all 24 runs reaching the expected end state.
+
+The 200% target is unmet on every workflow measured so far. Results, the four
+defects the live sites exposed, and the scope limits are in
+[docs/benchmark.md](docs/benchmark.md). Track task success, false success, side
+effects, wall time, model calls, retries, and fallback for every run.

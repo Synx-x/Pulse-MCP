@@ -120,3 +120,92 @@ no offset into the hash, so two positions in one long page answered to one id.
 Screen ids that ignore the offset let a stale-screen check pass wrongly. Screen
 ids now include the scroll offset, and
 `test_a_scrolled_position_gets_its_own_screen_id` holds that property.
+
+## The four defects the live sites exposed
+
+Date: 2026-10-24. Six workflows on public sites drove four fixes. Each defect
+stopped a real route, and each now has a test.
+
+| Defect | Symptom | Fix |
+| --- | --- | --- |
+| Styled checkbox hidden at opacity 0 | TodoMVC's per-item toggle never mapped, so no route could click it | The observer takes the control's text from its `<label>` and keeps the hidden box when the box hit-tests to itself |
+| Async page update after a click | The dynamic-controls page recorded the pre-click screen, and route learning failed with `changed nothing` | Every action reads until two reads agree on one screen id, bounded at 4 s, or 0.6 s while the screen is unchanged |
+| Stale check built the id without the scroll offset | A click on any scrolled page always failed as stale | The click calls the same `screen_id_at` the rest of the service uses |
+| Selection held only in a CSS class | The React App Lab outline click changed no text and no bounds, so it looked like a no-op | The observer reports a `selected` class or `aria-current` as `selected: true` |
+
+Step count sets the gain. Six clicks on the add/remove page, in process, 3 trials
+each: baseline p50 4,328 ms, replay p50 1,177 ms, a 72.8% reduction, with 3/3
+correct end states on both paths. Each baseline step costs an observe plus a
+guarded check. A route step costs one settled read. The gain stops short of 200%
+because a replay step still waits for its screen.
+
+The scroll route now passes 3/3 where it passed 2/3 before the settle wait. The
+divergence it used to report came from reading the page too early.
+
+## Two harnesses on the same six workflows
+
+Date: 2026-10-24. Six workflows on public sites, 2 paired trials per path, ran
+through both harnesses. The model was `deepseek-v4.1-flash-ultrafast` through
+OpenGateway for both. Claude Code ran `2.1.310` headless against
+`ANTHROPIC_BASE_URL=https://apis.opengateway.ai` with a dedicated config
+directory. Codex ran `codex exec` with the same model. Every run got its own
+Pulse state directory, its own Chromium profile and its own agent desktop.
+
+Wall time is the CLI process wall clock, which includes process launch on both
+paths. Success is read from the live page after the run, never from the agent's
+own report.
+
+The sequential workflow ran separately with 3 trials per path. Six clicks on the
+add/remove page through Claude Code: baseline p50 57.4 s with 13 tool calls,
+replay p50 16.0 s with 3, a 72.1% reduction, 3/3 success on both paths.
+
+### Claude Code
+
+| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction |
+| --- | --- | ---: | ---: | ---: |
+| Complete a todo | 7 → 5 | 30.9 s | 24.2 s | 21.7% |
+| Add two elements | 5.5 → 2.5 | 25.6 s | 14.6 s | 43.0% |
+| Toggle a checkbox | 3 → 2.5 | 14.0 s | 14.6 s | −4.3% |
+| Enable dynamic controls | 4 → 3 | 16.8 s | 20.2 s | −20.2% |
+| Scroll a long page | 4 → 3.5 | 18.4 s | 22.6 s | −22.8% |
+| Open the app-lab outline | 4 → 3.5 | 17.7 s | 18.1 s | −2.3% |
+
+All 24 runs reached the expected end state, 12 of 12 on each path. Repeated
+identical calls fell from 20 to 8.
+
+### Codex
+
+| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction |
+| --- | --- | ---: | ---: | ---: |
+| Complete a todo | 7 → 5.5 | 44.2 s | 41.0 s | 7.3% |
+| Add two elements | 5 → 2 | 43.2 s | 25.0 s | 42.0% |
+| Toggle a checkbox | 3 → 2.5 | 29.7 s | 26.3 s | 11.3% |
+| Enable dynamic controls | 3 → 2 | 27.6 s | 26.0 s | 5.8% |
+| Scroll a long page | 2.5 → 2.5 | 25.1 s | 36.8 s | −46.7% |
+| Open the app-lab outline | 4.5 → 3 | 34.8 s | 39.9 s | −14.7% |
+
+All 24 Codex runs reached the expected end state. Its overall p50 was 31.2 s
+baseline and 28.2 s replay, a 9.3% reduction. Repeated identical calls fell from
+18 to 5. Codex lost most on the scroll workflow, where one replay trial took
+51.3 s against a 25.1 s baseline p50.
+
+### What the paired runs do not show
+
+The 200% target is unmet on every workflow here. The best measured case is the
+six-click sequential workflow at 72.1% through Claude Code and 72.8% in process.
+The overall p50 across the six Claude workflows was 18.2 s baseline and 18.6 s
+replay, a 2% regression, and three of six workflows were slower on replay. The
+tool counts show why: on a single-step workflow a route saves one call, and the
+settle wait on each replay step costs about what the saved observation cost.
+
+Reaching 200% would need replay to skip the per-step settle wait. That wait is
+what makes an async step record correctly.
+
+These numbers are CLI wall time, so launch overhead sits in both paths. They are
+not a claim about steady-state agent latency.
+
+A map can hold a typed value after the page renders it. Pulse keeps a fill's
+value out of its own result and out of the map at fill time. TodoMVC then renders
+the value as the row's checkbox label, and the observer maps that label like any
+other page text. Redacting it would drop real page content, so the README states
+the limit instead.

@@ -23,6 +23,10 @@ viewport-relative bounds; it stores only a screenshot digest, never screenshot
 bytes. Browser clicks require a current mapped screen and explicit effect
 authorization for controls classified as writes. A changed screen records a
 verified transition.
+The observer reads a checkbox or radio input's text from the `<label>` it belongs
+to, then skips that label as a separate anchor. The observer does this because a
+styled control hides its own box at opacity 0 and still owns the click. The
+TodoMVC per-item toggle is the case that prompted this rule.
 Once a route has been learned, `pulse_browser_replay` executes it in one MCP
 call, verifies each expected DOM state, and stops on divergence. It captures a
 screenshot digest for the final state only; intermediate route checks use the

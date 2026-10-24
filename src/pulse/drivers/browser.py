@@ -62,12 +62,38 @@ def field_rejection(meta: Mapping[str, Any]) -> str | None:
 
 _OBSERVE = r"""(() => {
   const vw = innerWidth, vh = innerHeight;
+  const counts = (window.__pulseCounts = window.__pulseCounts || Object.create(null));
   const selectors = 'button,a,input,select,textarea,h1,h2,h3,nav,main,aside,label[for],[role="heading"],[role="main"],[role="navigation"],[role="complementary"],[role="button"],[role="link"],[role="menuitem"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="textbox"],[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[tabindex]:not([tabindex="-1"])';
-  const seen = new Set(), anchors = [];
+  const seen = new Set(), anchors = [], claimed = new Set(), allowHidden = new Set(), candidates = [];
+  const useLabel = new Map();
+  // A checkbox usually has a bare <label> beside it, and a styled one hides its
+  // own box at opacity 0 while still owning the click. So the input takes its
+  // label's text and the label is not mapped again on its own. TodoMVC hides its
+  // per-item toggle this way. Keep such an input when its centre hit-tests to it.
+  for (const el of document.querySelectorAll('input[type=checkbox],input[type=radio]')) {
+    const near = el.nextElementSibling && el.nextElementSibling.tagName === 'LABEL'
+      ? el.nextElementSibling
+      : (el.previousElementSibling && el.previousElementSibling.tagName === 'LABEL'
+         ? el.previousElementSibling : null);
+    const lab = (el.labels && el.labels[0]) || near || null;
+    if (lab) { claimed.add(lab); useLabel.set(el, lab); }
+    const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+    const hidden = r.width < 2 || r.height < 2 || s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0;
+    if (!hidden) continue;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < 0 || cy < 0 || cx >= vw || cy >= vh) continue;
+    const hit = document.elementFromPoint(cx, cy);
+    if (hit === el || el.contains(hit)) allowHidden.add(el);
+  }
   for (const el of document.querySelectorAll(selectors)) {
+    if (seen.has(el) || claimed.has(el)) continue;
+    candidates.push([el, useLabel.get(el) || null]);
+  }
+  for (const [el, lab] of candidates) {
     if (seen.has(el)) continue; seen.add(el);
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-    if (r.width < 2 || r.height < 2 || r.bottom <= 0 || r.right <= 0 || r.top >= vh || r.left >= vw || s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) continue;
+    if (!allowHidden.has(el) && (r.width < 2 || r.height < 2 || r.bottom <= 0 || r.right <= 0 || r.top >= vh || r.left >= vw || s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0)) continue;
+    if (allowHidden.has(el) && (r.bottom <= 0 || r.right <= 0 || r.top >= vh || r.left >= vw)) continue;
     // A label is the click target for a control that its own styling may hide.
     // Reading the control's type keeps the label in the same role as the control.
     let tagged = el.tagName;
@@ -78,7 +104,7 @@ _OBSERVE = r"""(() => {
     }
     const role = el.getAttribute('role') || ({BUTTON:'button',A:'link',INPUT:el.type === 'checkbox' ? 'checkbox' : el.type === 'radio' ? 'radio' : 'input',SELECT:'combobox',TEXTAREA:'textbox',H1:'heading',H2:'heading',H3:'heading',NAV:'navigation',MAIN:'main',ASIDE:'complementary',CHECKBOXLABEL:'checkbox',RADIOLABEL:'radio',BUTTONLABEL:'button'}[tagged] || 'control');
     const landmark = ['navigation','main','complementary'].includes(role);
-    const label = (el.getAttribute('aria-label') || el.getAttribute('title') || (landmark ? role : el.innerText || el.getAttribute('placeholder') || el.getAttribute('alt')) || '').replace(/\s+/g,' ').trim().slice(0,160);
+    const label = (el.getAttribute('aria-label') || el.getAttribute('title') || (landmark ? role : el.innerText || el.getAttribute('placeholder') || el.getAttribute('alt') || (lab ? lab.innerText : '')) || '').replace(/\s+/g,' ').trim().slice(0,160);
     if (!label && !['checkbox','radio','switch'].includes(role)) continue;
     const action = ['button','link','menuitem','tab','checkbox','radio','switch','input','combobox','textbox'].includes(role);
     // A label selects its control, so its state is the control's state.
@@ -87,7 +113,7 @@ _OBSERVE = r"""(() => {
       : el;
     const isOn = !!(control && (control.checked === true || control.getAttribute?.('aria-checked') === 'true'));
     const key = role + '\u0000' + (label || role);
-    const n = (window.__pulseCounts[key] = (window.__pulseCounts[key] || 0) + 1);
+    const n = (counts[key] = (counts[key] || 0) + 1);
     let hash1=2166136261, hash2=2246822519;
     for (const ch of new TextEncoder().encode(key + '\u0000' + n)) { hash1=Math.imul(hash1 ^ ch,16777619); hash2=Math.imul(hash2 ^ ch,3266489917); }
     const id='a-'+(hash1>>>0).toString(16).padStart(8,'0')+(hash2>>>0).toString(16).padStart(8,'0');

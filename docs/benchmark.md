@@ -193,6 +193,21 @@ baseline and 28.2 s replay, a 9.3% reduction. Repeated identical calls fell from
 18 to 5. Codex lost most on the scroll workflow, where one replay trial took
 51.3 s against a 25.1 s baseline p50.
 
+### Unseen sites, second batch
+
+Date: 2026-10-24. Two workflows on sites no earlier run had used. Each harness ran
+2 paired trials per path, inside its own agent desktop and Chromium profile.
+
+| Workflow | Site | Harness | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction | Success |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| Open two categories in a row | books.toscrape.com | Claude Code | 5.5 → 2.5 | 25.0 s | 13.4 s | 46.4% | 2/2 both |
+| Open two categories in a row | books.toscrape.com | Codex | 5 → 2 | 35.2 s | 21.0 s | 40.4% | 2/2 both |
+
+A route needs a mapped anchor to change. On demoqa.com/buttons a click writes
+"You have done a dynamic click" into a `<p>`, the observer maps no paragraph, so
+the screen id held and the route learned nothing. The README states that gap, and
+the demoqa checkbox page replaced this candidate. Its route verified first try.
+
 ### What the paired runs do not show
 
 The 200% target is unmet on every workflow here. The best measured case is the

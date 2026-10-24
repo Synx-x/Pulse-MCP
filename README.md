@@ -161,8 +161,10 @@ verified success preserved. Every measured workflow carries a route, and each
 route saves one guarded step per transition:
 
 - Six clicks in a row, in process: 72.8% below the primitive path. The same
-  workflow through Claude Code: 72.1% below it on p50 CLI wall time.
-- Two clicks: 43.0% below it through Claude Code and 42.0% through Codex.
+  workflow through Claude Code: 72.1% below it on p50 CLI wall time, and 75.1%
+  through Codex.
+- Two clicks: 43.0% below it through Claude Code and 42.0% through Codex. On an
+  unseen site, two category clicks: 46.4% and 40.4%.
 - One step: 6% above it through Claude Code and 11% below it through Codex,
   because a route then saves one call and pays a settle wait per step.
 - Overall across six live workflows: 2% slower than the baseline through Claude

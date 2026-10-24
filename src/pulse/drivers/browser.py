@@ -230,8 +230,10 @@ def redact(observation: Mapping[str, Any], secret: str) -> dict[str, Any]:
 
 
 class BrowserDriver:
-    def __init__(self, port: int = 9222, *, timeout: float = 5.0):
-        self.cdp = CdpTransport(port, timeout=timeout)
+    def __init__(self, port: int = 9222, *, target_url: str = "", timeout: float = 5.0):
+        # One CDP port can serve several tabs. A target URL keeps the driver on
+        # the page under test instead of whichever tab opened most recently.
+        self.cdp = CdpTransport(port, target_url=target_url, timeout=timeout)
 
     def evaluate(self, expression: str) -> Any:
         response = self.cdp.send("Runtime.evaluate", {
@@ -250,9 +252,14 @@ class BrowserDriver:
         if not isinstance(raw, dict):
             raise RuntimeError("browser did not return a document observation")
         # The digest supports comparing captures without persisting screenshot bytes.
+        # A background tab answers the DOM read but can stall the capture, so a
+        # failed capture reports no digest rather than losing the whole observation.
         digest = None
         if screenshot_digest:
-            shot = self.cdp.send("Page.captureScreenshot", {"format":"png","captureBeyondViewport":False})
+            try:
+                shot = self.cdp.send("Page.captureScreenshot", {"format":"png","captureBeyondViewport":False})
+            except (OSError, TimeoutError):
+                shot = {}
             encoded = shot.get("data", "")
             digest = hashlib.sha256(base64.b64decode(encoded)).hexdigest() if encoded else None
         return {**raw, "app_id": app_id, "screenshot_sha256": digest, "observed_at": time.time()}

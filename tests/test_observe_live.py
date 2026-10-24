@@ -19,6 +19,11 @@ from pulse.drivers.browser import _OBSERVE
 
 PORT = int(os.environ.get("PULSE_TEST_CDP_PORT", "9299"))
 
+# Ports a timing run or a bench harness may hold. This live test navigates the
+# browser that answers its port, so it must never land on one of those: it
+# replaces the page under test and corrupts the run.
+RESERVED_PORTS = frozenset({9251, 9252, 9299})
+
 
 def endpoint_answers(port: int) -> bool:
     """True when a Chromium debugging endpoint answers on this port."""
@@ -47,6 +52,8 @@ PAGE = """<!doctype html><title>Fixture</title>
 """
 
 
+@unittest.skipUnless(PORT not in RESERVED_PORTS,
+                     f"port {PORT} is reserved for a timing run; set PULSE_TEST_CDP_PORT")
 @unittest.skipUnless(endpoint_answers(PORT), f"no Chromium on port {PORT}")
 class LiveObserveTests(unittest.TestCase):
     """One real page, observed through the real script."""

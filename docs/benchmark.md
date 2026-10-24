@@ -155,43 +155,70 @@ Wall time is the CLI process wall clock, which includes process launch on both
 paths. Success is read from the live page after the run, never from the agent's
 own report.
 
-The sequential workflow ran separately with 3 trials per path, on both harnesses.
-Six clicks on the add/remove page:
+The sequential workflow is part of the nine-workflow set: 2 paired trials per
+path, on both harnesses. Six clicks on the add/remove page:
 
-| Harness | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction | Success |
-| --- | --- | ---: | ---: | ---: | --- |
-| Claude Code | 13 → 3 | 57.4 s | 16.0 s | 72.1% | 3/3 both |
-| Codex | 14 → 2 | 84.2 s | 20.9 s | 75.1% | 3/3 both |
+| Harness | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction | Speed increase | Success |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Claude Code | 16 → 2 | 43.63 s | 11.54 s | 73.6% | 278.2% | 2/2 both |
+| Codex | 15.5 → 2 | 84.15 s | 22.37 s | 73.4% | 276.2% | 2/2 both |
+
+An earlier run of this workflow, before replay began returning its final state,
+recorded 57.4 s to 16.0 s through Claude Code and 84.2 s to 20.9 s through Codex.
+The earlier set also used the older six-workflow list.
 
 ### Claude Code
 
-| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction |
-| --- | --- | ---: | ---: | ---: |
-| Complete a todo | 7 → 5 | 30.9 s | 24.2 s | 21.7% |
-| Add two elements | 5.5 → 2.5 | 25.6 s | 14.6 s | 43.0% |
-| Toggle a checkbox | 3 → 2.5 | 14.0 s | 14.6 s | −4.3% |
-| Enable dynamic controls | 4 → 3 | 16.8 s | 20.2 s | −20.2% |
-| Scroll a long page | 4 → 3.5 | 18.4 s | 22.6 s | −22.8% |
-| Open the app-lab outline | 4 → 3.5 | 17.7 s | 18.1 s | −2.3% |
+Nine workflows, 2 paired trials per path, after replay began returning its final
+state. Success is read from the live page after the run.
 
-All 24 runs reached the expected end state, 12 of 12 on each path. Repeated
-identical calls fell from 20 to 8.
+| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Speed increase |
+| --- | --- | ---: | ---: | ---: |
+| Six clicks in a row | 16 → 2 | 43.63 s | 11.54 s | 278.2% |
+| Two clicks | 6 → 3 | 16.91 s | 13.71 s | 23.3% |
+| Open two book categories | 4 → 2 | 16.98 s | 12.19 s | 39.3% |
+| Toggle a checkbox | 3 → 2 | 12.26 s | 9.78 s | 25.4% |
+| Tick the Home tree node | 3 → 2 | 19.90 s | 12.09 s | 64.6% |
+| Enable dynamic controls | 5 → 2 | 19.74 s | 12.29 s | 60.6% |
+| Open the app-lab outline | 4 → 4 | 21.16 s | 15.65 s | 35.2% |
+| Scroll a long page | 2 → 2 | 10.21 s | 13.62 s | −25.0% |
+| Complete a todo | 6 → 6 | 18.77 s | 24.77 s | −24.2% |
+
+Overall p50 was 17.83 s baseline and 12.49 s replay, a 42.8% speed increase. All
+35 runs that started reached the expected end state. One further baseline trial
+never ran, because route learning found no checkbox anchor named "Select Home"
+on the demoqa page that day.
+
+Two workflows regressed, and neither regression comes from replay. The todo
+workflow pays the same fill-and-enter prefix on both paths, and the route covers
+only the final click. The scroll workflow has a two-call route on both paths, so
+a single trial that loads tool schemas first decides its timing.
 
 ### Codex
 
-| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Reduction |
-| --- | --- | ---: | ---: | ---: |
-| Complete a todo | 7 → 5.5 | 44.2 s | 41.0 s | 7.3% |
-| Add two elements | 5 → 2 | 43.2 s | 25.0 s | 42.0% |
-| Toggle a checkbox | 3 → 2.5 | 29.7 s | 26.3 s | 11.3% |
-| Enable dynamic controls | 3 → 2 | 27.6 s | 26.0 s | 5.8% |
-| Scroll a long page | 2.5 → 2.5 | 25.1 s | 36.8 s | −46.7% |
-| Open the app-lab outline | 4.5 → 3 | 34.8 s | 39.9 s | −14.7% |
+The same nine workflows, 2 paired trials per path, on the same day and the same
+ports.
 
-All 24 Codex runs reached the expected end state. Its overall p50 was 31.2 s
-baseline and 28.2 s replay, a 9.3% reduction. Repeated identical calls fell from
-18 to 5. Codex lost most on the scroll workflow, where one replay trial took
-51.3 s against a 25.1 s baseline p50.
+| Workflow | Tool calls base → replay | Baseline p50 | Replay p50 | Speed increase |
+| --- | --- | ---: | ---: | ---: |
+| Six clicks in a row | 15.5 → 2 | 84.15 s | 22.37 s | 276.2% |
+| Two clicks | 5 → 2 | 36.86 s | 21.02 s | 75.4% |
+| Open two book categories | 4.5 → 2 | 37.33 s | 23.70 s | 57.5% |
+| Toggle a checkbox | 3 → 2 | 25.98 s | 22.17 s | 17.2% |
+| Tick the Home tree node | 3 → 2 | 27.76 s | 23.02 s | 20.6% |
+| Enable dynamic controls | 3 → 2 | 26.23 s | 22.16 s | 18.3% |
+| Open the app-lab outline | 4.5 → 3 | 36.05 s | 30.11 s | 19.7% |
+| Scroll a long page | 2.5 → 2 | 24.43 s | 21.74 s | 12.4% |
+| Complete a todo | 7 → 5 | 44.73 s | 35.39 s | 26.4% |
+
+Overall p50 was 34.55 s baseline and 23.00 s replay, a 50.2% speed increase. All
+36 runs reached the expected end state. Replay dropped to 2 calls on seven of the
+nine workflows.
+
+Codex pays a higher launch floor than Claude Code, 11.4 s against 5.7 s, so its
+smaller absolute savings still beat Claude Code on the sequential workflow and
+across the whole set. Codex spent 13 to 18 calls on a six-click baseline, where
+Claude Code spent 13 to 16.
 
 ### Unseen sites, second batch
 
@@ -210,16 +237,41 @@ the demoqa checkbox page replaced this candidate. Its route verified first try.
 
 ### What the paired runs do not show
 
-The 200% target is unmet on every workflow here. The best measured case is the
-six-click sequential workflow at 72.1% through Claude Code, 75.1% through Codex,
-and 72.8% in process. The overall p50 across the six Claude workflows was 18.2 s
-baseline and 18.6 s replay, a 2% regression, and three of six workflows were
-slower on replay. The tool counts show why: on a single-step workflow a route
-saves one call, and the settle wait on each replay step costs about what the saved
-observation cost.
+The 200% goal measures a speed increase. Speed increase divides baseline by
+replay before subtracting one, and reduction divides the saved time by the
+baseline. The six-click sequential workflow speeds up by 278.2% through Claude
+Code, which moves 43.63 s to 11.54 s and cuts the time by 73.6%. The sequential
+half of the goal is met through both harnesses. Codex speeds up by 276.2% on the
+same workflow, and the in-process path speeds up by 267.7%.
 
-Reaching 200% would need replay to skip the per-step settle wait. That wait is
-what makes an async step record correctly.
+Claude Code falls short on random and single-step requests. Two clicks through
+Claude Code reach a speed increase of 23.3% in the current set, and 75.3% in the
+earlier set. The earlier baseline re-observed before each action, so the two sets
+remove different amounts of observation for that agent. A single step regressed
+in two of nine workflows. The overall p50 across the nine Claude workflows was
+17.83 s baseline and 12.49 s replay, a speed increase of 42.8%.
+
+Codex clears random requests and misses on single steps. Two clicks through Codex
+reach 75.4%, and two book categories reach 57.5%. Its single-step workflows reach
+12.4% to 20.6%. The overall p50 across the nine Codex workflows was 34.55 s
+baseline and 23.00 s replay, a speed increase of 50.2%.
+
+Both harnesses reach the sequential target, and neither reaches it on random or
+single-step requests.
+
+The settle wait sets a replay step's cost, and the reads inside it are cheap. One
+settled read costs about 4.6 ms on an unchanged page. The settle call that wraps
+it costs 631 ms. The launch floor is 5.7 s for the Claude CLI and 11.4 s for
+Codex. Either path pays that floor, so a short workflow is mostly overhead.
+
+Replay no longer pays a confirmation turn. Replay returns the final state it
+already read, so the agent does not call observe a second time. Replay uses fewer
+calls than its baseline on seven of the nine workflows, and six workflows reach 2
+calls on replay.
+
+Closing the remaining gap would need replay to skip the per-step settle wait.
+That wait is what makes an async step record correctly, so the trade is a
+correctness decision rather than a tuning one.
 
 These numbers are CLI wall time, so launch overhead sits in both paths. They are
 not a claim about steady-state agent latency.
@@ -229,3 +281,24 @@ value out of its own result and out of the map at fill time. TodoMVC then render
 the value as the row's checkbox label, and the observer maps that label like any
 other page text. Redacting it would drop real page content, so the README states
 the limit instead.
+
+### Two ways this bench corrupted its own runs
+
+Both corruptions came from a second page taking over the port a trial was using.
+Each one produced a trial that looked like a product failure.
+
+The first corruption came from a probe browser. A probe on the bench port
+navigated the page under test between two trials, so a click hit a screen from a
+different task. The harness now refuses to start a probe browser on a bench port.
+
+The second corruption came from the test suite. `tests/test_observe_live.py`
+defaulted to port 9299 and navigated whatever browser answered it, writing a
+"Fixture" page over the bench page. Runs then observed `about:blank` and refused
+the task, which is correct behaviour on the page they actually saw. The live test
+now skips a reserved port, so a suite run can never take over a trial.
+
+The product fix that came out of both: a browser call takes an optional
+`target_url`, so one CDP port with several tabs stays on the page under test.
+`pulse_browser_targets` lists the tabs and the one a call would choose. A failed
+screenshot capture on a background tab now reports no digest instead of losing
+the whole observation.

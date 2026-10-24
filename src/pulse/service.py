@@ -198,7 +198,8 @@ class PulseService:
     def browser_observe(self, args: Mapping[str, Any]) -> dict[str, Any]:
         app_id = safe_id(str(args.get("app_id", "browser")))
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
-        driver = BrowserDriver(port)
+        page_url = str(args.get("target_url", "")).strip()
+        driver = BrowserDriver(port, target_url=page_url)
         try:
             observation = driver.observe(app_id)
         finally:
@@ -209,11 +210,26 @@ class PulseService:
                 "anchor_count": recorded["anchor_count"], "grid": recorded["grid"],
                 "anchors": observation["anchors"], "screenshot_sha256": observation["screenshot_sha256"]}
 
+    def browser_targets(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """List the page tabs one CDP port serves, in the order a call would choose.
+
+        One port can hold several pages. A caller that names a target_url gets the
+        page it means, and this list shows the choice it made possible.
+        """
+        from .drivers.cdp import page_targets
+        port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
+        pages = page_targets(port, page_url)
+        return {"port": port, "chosen": pages[0].get("url", ""),
+                "pages": [{"url": page.get("url", ""), "title": page.get("title", "")}
+                          for page in pages]}
+
     def browser_click(self, args: Mapping[str, Any]) -> dict[str, Any]:
         app_id = safe_id(str(args.get("app_id", "browser")))
         expected = safe_id(str(args.get("expected_screen", "")))
         anchor_id = safe_id(str(args.get("anchor_id", "")))
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
         authorized = args.get("authorized_effects", [])
         if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
             raise ValueError("authorized_effects may contain only write or irreversible")
@@ -226,7 +242,7 @@ class PulseService:
             raise ValueError("anchor is not an actionable control on the expected screen")
         if anchor.effect != "read" and anchor.effect not in authorized:
             raise PermissionError(f"clicking this {anchor.effect} control requires explicit authorization")
-        driver = BrowserDriver(port)
+        driver = BrowserDriver(port, target_url=page_url)
         try:
             current = screen_id_at(driver.observe(app_id))
             if current != expected:
@@ -254,6 +270,7 @@ class PulseService:
         expected = safe_id(str(args.get("expected_screen", "")))
         anchor_id = safe_id(str(args.get("anchor_id", "")))
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
         authorized = args.get("authorized_effects", [])
         if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
             raise ValueError("authorized_effects may contain only write or irreversible")
@@ -275,7 +292,7 @@ class PulseService:
             raise PermissionError(f"filling this {anchor.effect} control requires explicit authorization")
         x = (anchor.bounds.x + anchor.bounds.width / 2) * before.viewport["width"]
         y = (anchor.bounds.y + anchor.bounds.height / 2) * before.viewport["height"]
-        driver = BrowserDriver(port)
+        driver = BrowserDriver(port, target_url=page_url)
         keep_focus = bool(args.get("keep_focus"))
         try:
             current = screen_id_at(driver.observe(app_id, screenshot_digest=False))
@@ -328,6 +345,7 @@ class PulseService:
         app_id = safe_id(str(args.get("app_id", "browser")))
         expected = safe_id(str(args.get("expected_screen", "")))
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
         dx = _bounded_delta(args.get("dx", 0), "dx")
         dy = _bounded_delta(args.get("dy", 0), "dy")
         if dx == 0 and dy == 0:
@@ -336,7 +354,7 @@ class PulseService:
         if screen_map is None or expected not in screen_map.screens:
             raise KeyError("expected screen is not in the stored map")
         before = screen_map.screens[expected]
-        driver = BrowserDriver(port)
+        driver = BrowserDriver(port, target_url=page_url)
         try:
             current = screen_id_at(driver.observe(app_id, screenshot_digest=False))
             if current != expected:
@@ -380,6 +398,7 @@ class PulseService:
         app_id = safe_id(str(args.get("app_id", "browser")))
         expected = safe_id(str(args.get("expected_screen", "")))
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
         authorized = args.get("authorized_effects", [])
         if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
             raise ValueError("authorized_effects may contain only write or irreversible")
@@ -391,7 +410,7 @@ class PulseService:
         screen_map = self.store.load_map(app_id)
         if screen_map is None or expected not in screen_map.screens:
             raise KeyError("expected screen is not in the stored map")
-        driver = BrowserDriver(port)
+        driver = BrowserDriver(port, target_url=page_url)
         try:
             current = screen_id_at(driver.observe(app_id, screenshot_digest=False))
             if current != expected:
@@ -415,6 +434,7 @@ class PulseService:
         start = safe_id(str(args.get("start", "")))
         target = str(args.get("target", "")).strip()
         port = int(args.get("port", os.environ.get("PULSE_CDP_PORT", "9222")))
+        page_url = str(args.get("target_url", "")).strip()
         authorized = args.get("authorized_effects", [])
         if not isinstance(authorized, list) or any(x not in {"write", "irreversible"} for x in authorized):
             raise ValueError("authorized_effects may contain only write or irreversible")
@@ -434,8 +454,9 @@ class PulseService:
                 raise ValueError("mapped route anchor disappeared")
             if anchor.effect != "read" and anchor.effect not in authorized:
                 raise PermissionError(f"route includes {anchor.effect} action; explicit authorization required")
-        driver = BrowserDriver(port)
+        driver = BrowserDriver(port, target_url=page_url)
         completed = []
+        final = None
         try:
             start_id = screen_id_at(driver.observe(app_id, screenshot_digest=False))
             if start_id != start:
@@ -472,8 +493,21 @@ class PulseService:
                                   "to": observed, "verified": True})
                 if is_last:
                     self.record_screen(raw)
-            return {"completed": True, "target_screen": plan["target"],
-                    "steps_completed": len(completed), "steps": completed}
+                    # The last settled read is the final state. Returning it saves
+                    # the caller the confirmation observe, which is a whole model
+                    # turn on every route.
+                    final = {"screen_id": observed, "title": raw.get("title", ""),
+                             "viewport": raw.get("viewport"),
+                             "anchor_count": len(raw.get("anchors", [])),
+                             "screenshot_sha256": raw.get("screenshot_sha256"),
+                             "anchors": raw.get("anchors", [])}
+            result = {"completed": True, "target_screen": plan["target"],
+                      "steps_completed": len(completed), "steps": completed}
+            # A route with no steps already sits on the target, so it has no read
+            # to report. Only a route that acted carries a final state.
+            if final is not None:
+                result.update(final)
+            return result
         finally:
             driver.close()
 

@@ -374,6 +374,10 @@ class BrowserScrollTests(unittest.TestCase):
         FakeDriver.calls = []
         FakeDriver.observation_sequence = []
         FakeDriver.next_observation = observation(field())
+        # Each class sets the scroll result it needs. A class that leaves this
+        # unset reads whatever the previous class left behind.
+        FakeDriver.next_scroll = {"before": {"x": 0, "y": 0}, "after": {"x": 0, "y": 300},
+                                  "max": {"x": 0, "y": 900}}
         self.screen_id = self.service.record_screen(observation(field()))["screen_id"]
         self.patcher = patch("pulse.service.BrowserDriver", FakeDriver)
         self.patcher.start()
@@ -535,6 +539,17 @@ class BrowserReplayTests(unittest.TestCase):
         result = self.replay()
         self.assertTrue(result["completed"])
         self.assertEqual(result["steps_completed"], 1)
+
+    def test_a_finished_route_reports_the_screen_its_last_step_reached(self):
+        """The last settled read is already the answer, so a caller need not ask again."""
+        FakeDriver.observation_sequence = [self.start, self.start, self.end, self.end]
+        FakeDriver.next_observation = self.end
+        result = self.replay()
+        self.assertTrue(result["completed"])
+        self.assertEqual(result["target_screen"], screen_id_at(self.end))
+        self.assertEqual(result["screen_id"], screen_id_at(self.end))
+        self.assertEqual(result["title"], "End")
+        self.assertEqual({a["label"] for a in result["anchors"]}, {"Email"})
 
     def test_a_real_divergence_stops_the_route_without_acting_further(self):
         elsewhere = observation(field(), title="Elsewhere")

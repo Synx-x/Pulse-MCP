@@ -42,7 +42,16 @@ change or the click records nothing.
 Once a route has been learned, `pulse_browser_replay` executes it in one MCP
 call, verifies each expected DOM state, and stops on divergence. It captures a
 screenshot digest for the final state only; intermediate route checks use the
-structured DOM map.
+structured DOM map. A finished route reports the final state it already read:
+screen id, title, viewport, anchor count, anchors and digest. A caller therefore
+needs no separate observe call to confirm the route landed.
+
+A page target is chosen per call. When one CDP port serves several tabs, a call
+without a `target_url` takes the newest page target, which may not be the page
+under test. Pass `target_url` on any browser call to pin the page it names, and
+call `pulse_browser_targets` first to see every tab the port serves and which one
+a call would choose. A background tab can stall a screenshot capture, so a failed
+capture reports no digest and the observation still returns its anchors.
 
 The Linux desktop adapter reads `computer-use-linux` accessibility snapshots
 and screenshots. It places accessible elements on the same normalized grid;
@@ -93,6 +102,7 @@ tools; agents do not need a special Pulse command.
 | `pulse_routine_list` | List candidates |
 | `pulse_routine_get` | Read a candidate |
 | `pulse_browser_observe` | Observe and map visible controls from a local Chromium tab |
+| `pulse_browser_targets` | List the page tabs one CDP port serves and which one a call chooses |
 | `pulse_browser_click` | Click a mapped control after a stale-screen check |
 | `pulse_browser_fill` | Type into one mapped field, guarded, with no implicit submit |
 | `pulse_browser_key` | Send `enter` or `escape` to the focused element |
@@ -156,21 +166,28 @@ python3 -m compileall -q src tests
 
 ## Performance target
 
-Replay latency aims at 50% below a model-in-the-loop computer-use baseline, with
-verified success preserved. Every measured workflow carries a route, and each
-route saves one guarded step per transition:
+The target holds on sequential work and misses on random requests. The target's
+sequential case is six clicks in a row, which speed up by 278.2% through Claude
+Code and 276.2% through Codex. The target's random case reaches 23.3% on two
+clicks through Claude Code and 75.4% through Codex. Its single-step case runs
+25.0% slower on the scroll workflow through Claude Code and 12.4% faster through
+Codex. The target's overall figure is a 42.8% speed increase through Claude Code
+and 50.2% through Codex, so the broad 200% target remains open.
 
-- Six clicks in a row, in process: 72.8% below the primitive path. The same
-  workflow through Claude Code: 72.1% below it on p50 CLI wall time, and 75.1%
-  through Codex.
-- Two clicks: 43.0% below it through Claude Code and 42.0% through Codex. On an
-  unseen site, two category clicks: 46.4% and 40.4%.
-- One step: 6% above it through Claude Code and 11% below it through Codex,
-  because a route then saves one call and pays a settle wait per step.
-- Overall across six live workflows: 2% slower than the baseline through Claude
-  Code, with all 24 runs reaching the expected end state.
+Every measured workflow carries a route, and each route saves one guarded step
+per transition:
 
-The 200% target is unmet on every workflow measured so far. Results, the four
-defects the live sites exposed, and the scope limits are in
+- Six clicks in a row, in process: a 72.8% reduction, or 267.7% faster. Through
+  Claude Code the same workflow runs 43.63 s to 11.54 s, a 278.2% speed increase,
+  and through Codex 84.15 s to 22.37 s, which is 276.2%.
+- Two clicks: 23.3% faster through Claude Code and 75.4% through Codex. Two
+  category clicks on an unseen site reach 39.3% and 57.5%.
+- A single step: 25.0% slower on the scroll workflow through Claude Code, and
+  12.4% faster through Codex.
+- Nine live workflows: a 42.8% speed increase through Claude Code and 50.2%
+  through Codex, after replay began returning its final state. Every run reached
+  the expected end state.
+
+Results, the four defects the live sites exposed, and the scope limits are in
 [docs/benchmark.md](docs/benchmark.md). Track task success, false success, side
 effects, wall time, model calls, retries, and fallback for every run.

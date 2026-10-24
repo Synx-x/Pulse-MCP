@@ -78,6 +78,9 @@ tools; agents do not need a special Pulse command.
 | `pulse_routine_get` | Read a candidate |
 | `pulse_browser_observe` | Observe and map visible controls from a local Chromium tab |
 | `pulse_browser_click` | Click a mapped control after a stale-screen check |
+| `pulse_browser_fill` | Type into one mapped field, guarded, with no implicit submit |
+| `pulse_browser_key` | Send `enter` or `escape` to the focused element |
+| `pulse_browser_scroll` | Scroll the viewport by a bounded delta and re-map it |
 | `pulse_browser_replay` | Execute a verified route in one call with state checks |
 | `pulse_desktop_observe` | Map a Linux desktop from accessibility and screenshot data |
 | `pulse_desktop_click` | Click a mapped desktop control after a stale-screen check |
@@ -101,6 +104,23 @@ The server reads port 9222 by default; tools can pass another local debugging
 port, or set `PULSE_CDP_PORT` in the MCP server environment. Connect only a
 browser profile intended for agent control.
 
+A fill keeps the typed value out of every map, tool result, and saved routine. A
+fill reports only the length it typed, and a fill refuses password, file, hidden,
+checkbox, radio, disabled and read-only fields. A fill confirms the entry by
+reading the field back, and a fill sends no key, so a fill cannot submit a form.
+Two further rules govern focus and line endings:
+
+- A fill drops focus once it confirms, because a focused field's text appears in
+  the next observation's anchor labels. Pass `keep_focus` when a fill is followed
+  by `pulse_browser_key`, which needs that focus for the key to land.
+- A single-line field loses a trailing newline, so the entry is trimmed for that
+  field and confirmed against the trimmed text.
+
+A scroll position takes part in the screen id, so two positions in one long page
+do not answer to the same id and a stale-screen check cannot pass wrongly. A
+scroll that changes the screen records a verified transition, so the step can
+join a route. `pulse_browser_replay` repeats that step from the deltas in its edge.
+
 Desktop tools require `computer-use-linux mcp` on `PATH`; set
 `PULSE_COMPUTER_USE_BIN` to choose a specific binary. Tesseract is optional and
 is used only to place controls whose accessibility bounds are missing.
@@ -114,12 +134,16 @@ python3 -m compileall -q src tests
 
 ## Performance target
 
-Pulse aims for at least 50% lower median end-to-end time than a model-in-the-loop
-computer-use baseline, with verified success preserved. Three paired Claude
-Code runs on one local browser route measured 54.2% lower p50 CLI wall time for
-verified replay, with all six runs succeeding. Paired local MCP driver tests
-measured 69.0% lower p50 latency on a browser route and 68.9% on a VNC-backed
-desktop route. Results and scope limits are in [docs/benchmark.md](docs/benchmark.md).
-The harness-level result still needs replication with Codex, desktop tasks, and
-more representative workflows. Track task success, false success, side
-effects, wall time, model calls, retries, and fallback for every run.
+Replay latency aims at 50% below a model-in-the-loop computer-use baseline, with
+verified success preserved. Replay latency on live public sites measured 76.4%
+below the primitive path on a two-click workflow. Replay latency on live public
+sites measured 14.5% to 47.4% below it on single-step and three-step workflows,
+because a route saves observation work rather than click count. Replay latency
+through Claude Code measured 54.2% below the baseline on p50 CLI wall time over
+three paired runs of one local browser route, with all six runs succeeding.
+Replay latency in-process measured 69.0% below it on a browser route and 68.9% on
+a VNC-backed desktop route. Results and scope limits are in
+[docs/benchmark.md](docs/benchmark.md). The harness-level result still needs
+replication with Codex, desktop tasks, and more representative workflows. Track
+task success, false success, side effects, wall time, model calls, retries, and
+fallback for every run.

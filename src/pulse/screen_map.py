@@ -68,7 +68,13 @@ class ScreenMap:
         if source is None or edge.target not in self.screens:
             raise ValueError("transition source and target must already exist in the map")
         anchor = next((item for item in source.anchors if item.id == edge.anchor_id), None)
-        if anchor is None or not anchor.actionable:
+        if anchor is None:
+            # A scroll edge names no page anchor. Its label is the reserved one,
+            # and the effect is its own, so a page anchor cannot stand in.
+            if edge.label != "scroll the viewport" or edge.effect != "write":
+                raise ValueError("a transition without a page anchor must be a scroll edge")
+            return
+        if not anchor.actionable:
             raise ValueError("transition anchor must be actionable on its source screen")
         if anchor.label.casefold() != edge.label.casefold():
             raise ValueError("transition label must match its source anchor")

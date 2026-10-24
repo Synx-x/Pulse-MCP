@@ -61,6 +61,26 @@ _TOOLS: dict[str, tuple[str, dict[str, Any], str]] = {
          "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
            "expected_screen": {"type": "string"}, "anchor_id": {"type": "string"},
            "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_click"),
+    "pulse_browser_fill": (
+        "Type a value into one mapped browser field. The value applies to this call only, is never stored or returned, and never submits the form. Requires authorized_effects:[\"write\"]. Password, file, hidden, checkbox, radio, disabled and read-only fields are refused. Set keep_focus when a fill is followed by pulse_browser_key, because a fill drops focus by default to keep the value out of the map.",
+        {"type": "object", "required": ["expected_screen", "anchor_id", "value", "authorized_effects"],
+         "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+           "expected_screen": {"type": "string"}, "anchor_id": {"type": "string"},
+           "value": {"type": "string"}, "keep_focus": {"type": "boolean"},
+           "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_fill"),
+    "pulse_browser_scroll": (
+        "Scroll the current browser viewport by a bounded pixel delta and map the resulting screen. The scroll acts only on the viewport of the expected mapped screen.",
+        {"type": "object", "required": ["expected_screen"],
+         "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+           "expected_screen": {"type": "string"},
+           "dx": {"type": "number"}, "dy": {"type": "number"}}}, "browser_scroll"),
+    "pulse_browser_key": (
+        "Send one allowlisted key, enter or escape, to the focused element on the expected screen. Enter submits the form that holds the focused field. Requires authorized_effects:[\"write\"].",
+        {"type": "object", "required": ["expected_screen", "key", "authorized_effects"],
+         "properties": {"app_id": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+           "expected_screen": {"type": "string"},
+           "key": {"type": "string", "enum": ["enter", "escape"]},
+           "authorized_effects": {"type": "array", "items": {"type": "string", "enum": ["write", "irreversible"]}}}}, "browser_key"),
     "pulse_browser_replay": (
         "Execute a previously verified route in one browser call. Each step checks its expected screen and stops on divergence. Write and irreversible effects require explicit authorization.",
         {"type": "object", "required": ["start", "target"],

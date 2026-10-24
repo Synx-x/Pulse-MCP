@@ -80,3 +80,43 @@ the successful alias-started baseline switched to Haiku 5.5, and a separate
 replay attempt using the alias failed before any Pulse call. The included runs
 therefore compare the recorded Haiku 5.5 backend on both sides; they are not a
 DeepSeek UltraFast benchmark.
+
+## Live public sites, four workflows
+
+Date: 2026-10-24. The run used one isolated Chromium inside an agent desktop. The
+run gave that Chromium its own profile, its own CDP port, and its own Pulse state
+directory. The run placed the agent desktop on an isolated sway seat with a VNC
+stream, so the host cursor and focus never moved. The run performed only
+reversible actions: a fresh navigation between trials, a checkbox toggled back,
+and a scroll that moves the viewport alone.
+
+Each path ran three times per task. The baseline path performed one primitive per
+step and re-observed before each step. The replay path performed the same clicks
+as one verified route in a single call. The check read the live page after each
+run, because a tool's own report is not evidence.
+
+| Workflow | Site | Calls | Baseline p50 | Replay p50 | Reduction | Success |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Complete a todo | todomvc.com | 3 → 3 | 903.3 ms | 772.5 ms | 14.5% | 3/3 both |
+| Add two elements | the-internet, add_remove_elements | 2 → 1 | 751.1 ms | 177.0 ms | 76.4% | 3/3 both |
+| Toggle a checkbox | the-internet, checkboxes | 1 → 1 | 439.7 ms | 231.3 ms | 47.4% | 3/3 both |
+| Scroll a long page | the-internet, infinite_scroll | 1 → 1 | 363.8 ms | 274.9 ms | 24.4% | 3/3, replay 2/3 |
+
+The reduction tracks how much observation a route removes, not the click count.
+The route that replaced several guarded steps gained the most. The route for a
+single step gained the least, because both paths observe twice and a route saves
+one intermediate screenshot digest.
+
+Replay for the scroll route is the one incomplete result. Replay stopped on one
+of three trials with `screen diverged; route stopped for replanning`, after zero
+steps completed. A replay stop is correct behaviour rather than a silent wrong
+answer. The lazy-loading page settled to a different screen id than the one
+learned, and replay refused to act against it. Replay on this page needs a
+settled-state wait before learning, and Pulse has none yet. A fixed pixel delta
+across a page whose content height changes between runs is the cause.
+
+Screen ids are the second result. Screen ids for the older scroll handling folded
+no offset into the hash, so two positions in one long page answered to one id.
+Screen ids that ignore the offset let a stale-screen check pass wrongly. Screen
+ids now include the scroll offset, and
+`test_a_scrolled_position_gets_its_own_screen_id` holds that property.
